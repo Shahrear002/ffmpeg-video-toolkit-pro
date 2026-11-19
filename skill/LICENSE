@@ -1,0 +1,27 @@
+COMMERCIAL SINGLE-USER SOFTWARE LICENSE
+Product: FFmpeg Video Toolkit Pro (Agensi Skill Package)
+Version: 1.0.0
+Author: Video Toolkit Pro Team
+
+*** IMPORTANT NOTICE: THIS DRAFT LICENSE REQUIRES FORMAL LEGAL REVIEW ***
+
+1. GRANT OF LICENSE
+Subject to payment of the applicable marketplace licensing fee on Agensi.io, the Licensor grants you (the "Licensee") a non-exclusive, non-transferable, perpetual, single-user commercial license to install and run FFmpeg Video Toolkit Pro across personal or commercial software agent environments and development machines owned or controlled by Licensee.
+
+2. PERMITTED USES
+- Installation and execution by Licensee's local AI coding agents (Claude Code, Cursor, Codex CLI, OpenClaw, Gemini CLI, etc.).
+- Processing, transforming, editing, and distributing any media files produced by the software for personal, commercial, or client projects.
+- Inclusion of the skill scripts inside internal private repositories owned by the Licensee.
+
+3. RESTRICTIONS
+- You may NOT resell, sub-license, rent, lease, redistribute, or publicly publish the uncompiled source code, skill packages, or derivatives on public repositories or marketplaces.
+- You may NOT extract, re-brand, or package the engine as a standalone competing commercial skill package or API service without prior written consent.
+- You may NOT remove any proprietary notices or copyright labels.
+
+4. THIRD-PARTY COMPONENTS
+This package coordinates commands with external FFmpeg and FFprobe binaries. FFmpeg is licensed under the LGPL v2.1+ or GPL v2+ depending on build configuration. This license does not convey any ownership in FFmpeg. Users must obtain and operate FFmpeg in accordance with its respective licenses.
+
+5. DISCLAIMER OF WARRANTIES
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
+
+For enterprise licensing inquiries or redistribution rights, contact: licensing@agensi.io

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "last_updated": "2026-11-19",
+  "platforms": {
+    "discord": {
+      "name": "Discord (Free Tier)",
+      "target_bytes": 20971520,
+      "max_bytes": 20971520,
+      "size_mb": 20,
+      "last_verified": "2026-11-19",
+      "source_url": "https://discord.com",
+      "status": "VERIFIED",
+      "recommended_resolution": "1280x720",
+      "recommended_fps": 30,
+      "notes": "Discord free tier upload limit is 20MB per file."
+    },
+    "discord-nitro-basic": {
+      "name": "Discord (Nitro Basic)",
+      "target_bytes": 52428800,
+      "max_bytes": 52428800,
+      "size_mb": 50,
+      "last_verified": "2026-11-19",
+      "source_url": "https://discord.com",
+      "status": "VERIFIED",
+      "recommended_resolution": "1920x1080",
+      "recommended_fps": 60,
+      "notes": "Discord Nitro Basic tier allows uploads up to 50MB."
+    },
+    "discord-nitro": {
+      "name": "Discord (Nitro)",
+      "target_bytes": 1073741824,
+      "max_bytes": 1073741824,
+      "size_mb": 1024,
+      "last_verified": "2026-11-19",
+      "source_url": "https://discord.com",
+      "status": "VERIFIED",
+      "recommended_resolution": "1920x1080",
+      "recommended_fps": 60,
+      "notes": "Discord Nitro full tier allows uploads up to 1GB."
+    },
+    "whatsapp": {
+      "name": "WhatsApp (Gallery/Media)",
+      "target_bytes": 16777216,
+      "max_bytes": 16777216,
+      "size_mb": 16,
+      "last_verified": "2026-11-19",
+      "source_url": "https://faq.whatsapp.com",
+      "status": "VERIFIED",
+      "recommended_resolution": "1280x720",
+      "recommended_fps": 30,
+      "notes": "WhatsApp standard chat media sharing limit is 16MB."
+    },
+    "whatsapp-doc": {
+      "name": "WhatsApp (Document Mode)",
+      "target_bytes": 2147483648,
+      "max_bytes": 2147483648,
+      "size_mb": 2048,
+      "last_verified": "2026-11-19",
+      "source_url": "https://faq.whatsapp.com",
+      "status": "VERIFIED",
+      "recommended_resolution": "1920x1080",
+      "recommended_fps": 60,
+      "notes": "Sending video attached as a document bypasses media limits up to 2GB."
+    },
+    "github": {
+      "name": "GitHub (Issue/PR/Comment)",
+      "target_bytes": 26214400,
+      "max_bytes": 26214400,
+      "size_mb": 25,
+      "last_verified": "2026-11-19",
+      "source_url": "https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/attaching-files",
+      "status": "VERIFIED",
+      "recommended_resolution": "1280x720",
+      "recommended_fps": 30,
+      "notes": "GitHub Web UI issue and PR attachment limit is 25MB."
+    },
+    "github-push": {
+      "name": "GitHub (Git Push Warning / Cap)",
+      "target_bytes": 104857600,
+      "max_bytes": 104857600,
+      "size_mb": 100,
+      "last_verified": "2026-11-19",
+      "source_url": "https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github",
+      "status": "VERIFIED",
+      "recommended_resolution": "1920x1080",
+      "recommended_fps": 30,
+      "notes": "GitHub warns at 50MB and hard blocks git pushes containing files larger than 100MB without Git LFS."
+    },
+    "x-twitter": {
+      "name": "X (Twitter Free)",
+      "target_bytes": 536870912,
+      "max_bytes": 536870912,
+      "size_mb": 512,
+      "max_duration_s": 140,
+      "last_verified": "2026-11-19",
+      "source_url": "https://help.twitter.com",
+      "status": "VERIFIED",
+      "recommended_resolution": "1920x1080",
+      "recommended_fps": 30,
+      "notes": "X/Twitter free tier allows videos up to 512MB and 140 seconds duration."
+    },
+    "email-gmail": {
+      "name": "Gmail / Email Attachment Safe Target",
+      "target_bytes": 20971520,
+      "max_bytes": 20971520,
+      "size_mb": 20,
+      "last_verified": "2026-11-19",
+      "source_url": "https://support.google.com/mail/answer/6584",
+      "status": "VERIFIED",
+      "recommended_resolution": "1280x720",
+      "recommended_fps": 30,
+      "notes": "Total email size cap is 25MB. Base64 encoding expands raw files by ~33%, so video target is capped at 20MB."
+    },
+    "slack": {
+      "name": "Slack File Upload",
+      "target_bytes": 1073741824,
+      "max_bytes": 1073741824,
+      "size_mb": 1024,
+      "last_verified": "2026-11-19",
+      "source_url": "https://slack.com/help/articles/201726587-Upload-files-to-Slack",
+      "status": "VERIFIED",
+      "recommended_resolution": "1920x1080",
+      "recommended_fps": 60,
+      "notes": "Slack file upload cap is 1GB across plans."
+    }
+  }
+}

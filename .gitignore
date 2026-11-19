@@ -1,0 +1,80 @@
+# ==============================================================================
+# FFmpeg Video Toolkit Pro - .gitignore
+# ==============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/*.zip
+dist/*.sha256
+!dist/.gitkeep
+downloads/
+eggs/
+.eggs/
+parts/
+var/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node & Nuxt 3
+node_modules/
+.nuxt/
+.output/
+.nitro/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Rust & Tauri v2
+target/
+src-tauri/target/
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/*
+!desktop/src-tauri/binaries/.gitkeep
+desktop/src-tauri/gen/
+desktop/src-tauri/.cargo/
+
+# Local media, test artifacts & temp files
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.flac
+*.mp3
+*.gif
+*.webp
+*.jpg
+*.png
+!desktop/app/assets/**
+!desktop/app/public/**
+!docs/assets/**
+ffmpeg2pass*
+*.passlog*
+passlog*
+filter_script*.txt
+
+# IDEs & System
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
