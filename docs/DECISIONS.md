@@ -77,3 +77,40 @@ This document records the architectural and design decisions made for **FFmpeg V
 ## 8. Verified Platform Limits Data Architecture
 * **Context**: Platform video upload limits change frequently across subscription tiers.
 * **Decision**: Store limits in `engine/data/platform_limits.json` containing explicit source documentation URLs, verified dates, max byte limits, and recommended presets for Discord, WhatsApp, GitHub, X/Twitter, Gmail, and Slack.
+
+
+---
+
+## 9. Desktop Sidecar Architecture & Scoped Capabilities (Tauri v2)
+* **Context**: The desktop app must execute the engine without requiring the end-user to install Python, while maintaining strict local security sandbox boundaries.
+* **Decision**:
+  - Package `video_toolkit.py` into a standalone PyInstaller binary per target OS (`video_toolkit-$TARGET_TRIPLE`).
+  - Bundle pinned, checksum-verified FFmpeg and FFprobe binaries in `src-tauri/binaries/`.
+  - Configure Tauri v2 capabilities (`desktop/src-tauri/capabilities/default.json`) with strictly scoped sidecar execution (`core:default`, `shell:allow-spawn`, `dialog:default`, `fs:default`).
+  - Disallow arbitrary shell execution; only the bundled binaries can be executed.
+
+---
+
+## 10. Nuxt 3 Static Single-Page Application (SPA) with Zero Telemetry
+* **Context**: The desktop app runs offline in a secure local desktop webview. It must load instantly without a Node.js server runtime, telemetry, or remote CDN requests.
+* **Decision**:
+  - Configure Nuxt 3 with `ssr: false` and `telemetry: false`.
+  - Use `nitro.output.publicDir: '.output/public'` with `pnpm generate` to compile a zero-dependency static bundle (HTML, JS, CSS).
+  - Enforce a strict Content Security Policy (CSP): `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:; font-src 'self'; connect-src 'self'; media-src 'self' asset:;`.
+
+---
+
+## 11. Licensing Seam & Local Validation Architecture
+* **Context**: The product will be sold commercially, requiring an activation interface for license keys without deploying an unmaintained or fragile remote activation server.
+* **Decision**:
+  - Implement a `LicenseValidator` trait in Rust with a `LocalNoOpLicenseValidator` implementation.
+  - Define standard format checks (e.g. `FVT-PRO-*` or `AGY-*`) verifying key checksums locally while providing an asynchronous extension seam for future licensing providers.
+  - Expose `verify_license_key` via Tauri invoke handler and provide a responsive settings view with status feedback.
+
+---
+
+## 12. In-App GPL v2+ Compliance & Source Code Offer
+* **Context**: libx264 builds of FFmpeg are licensed under GPL v2+. Distributing compiled binaries requires GPL compliance.
+* **Decision**:
+  - Include an explicit "Licenses" screen in the desktop UI presenting the GPL v2+ notice and machine-readable source offer link (`https://github.com/FFmpeg/FFmpeg`).
+  - Detail third-party component licenses (Tauri, Nuxt 3, Vue 3, Lucide) in `THIRD_PARTY_NOTICES.md` and make them accessible directly from the app interface.
