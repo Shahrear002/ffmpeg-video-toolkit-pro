@@ -6,86 +6,143 @@
 [![Tauri: v2](https://img.shields.io/badge/Tauri-v2-orange.svg)](https://v2.tauri.app)
 [![Nuxt: 3](https://img.shields.io/badge/Nuxt-3-00DC82.svg)](https://nuxt.com)
 
-**FFmpeg Video Toolkit Pro** is a commercial, production-grade video processing product engineered around a single, deterministic core engine (`engine/video_toolkit.py`). It powers two distinct commercial deliverables:
+**FFmpeg Video Toolkit Pro** is a commercial, production-grade video processing product engineered around a single, deterministic core engine (`engine/video_toolkit.py`). It powers two distinct deliverables:
 
-1. **Deliverable A — Agensi.io Skill Package**: A lightweight, self-contained AI Agent Skill packaged for [agensi.io](https://agensi.io) that runs directly on buyer-provided FFmpeg with zero pip dependencies, no network permissions, and progressive disclosure documentation.
+1. **Deliverable A — Agensi.io Skill Package**: A self-contained AI Agent Skill packaged for [agensi.io](https://agensi.io) that runs directly on buyer-provided FFmpeg with zero pip dependencies, zero network permissions, and progressive disclosure documentation.
 2. **Deliverable B — Cross-Platform Desktop App**: A fast, privacy-respecting desktop application (Windows, macOS, Linux) built with **Tauri v2** + **Nuxt 3** (TypeScript strict) that executes the engine as a native sidecar with real-time JSON progress streaming, job queues, drag-and-drop batch operations, and an in-app license activation seam.
 
 ---
 
-## Repository Layout
+## 1. Deliverables & Installation
 
-```text
-ffmpeg-video-toolkit-pro/
-├── engine/
-│   ├── video_toolkit.py          # Single-file core engine (Python 3.9+, standard library only)
-│   ├── tests/                    # Unittest test suite (no external dependencies)
-│   │   ├── test_pure_logic.py    # Offline unit tests (bitrate math, silence parsing, atempo)
-│   │   └── test_integration.py  # Live media tests against lavfi synthetic test fixtures
-│   └── data/
-│       └── platform_limits.json  # Verified platform upload caps with sources & timestamps
-├── skill/                        # Deliverable A: What gets zipped for Agensi.io
-│   ├── SKILL.md                  # Progressive disclosure agent instructions & subcommand mapping
-│   ├── LICENSE                   # Draft commercial single-user software license
-│   ├── README.md                 # Agent installation guide & 10 copy-paste recipes
-│   ├── scripts/
-│   │   └── video_toolkit.py      # Synced from engine at build time (never hand-edited)
-│   └── references/
-│       ├── platform-limits.md    # Compiled markdown reference of verified platform caps
-│       └── encoding-presets.md   # Guide on CRF vs. 2-pass bitrate, bppf, and yuv420p rules
-├── desktop/                      # Deliverable B: Tauri v2 + Nuxt 3 desktop app
-│   ├── src-tauri/                # Rust backend with scoped sidecar process capabilities
-│   └── app/                      # Nuxt 3 + TypeScript strict + Tailwind UI
-├── scripts/
-│   ├── audit_self.py             # Security audit static analyzer (zero network, zero eval/exec)
-│   ├── build_skill_zip.py        # Deterministic zip packager with SHA256 checksums
-│   ├── build_engine_sidecar.py   # PyInstaller sidecar binary cross-compilation helper
-│   └── fetch_ffmpeg.py           # Pinned, checksum-verified FFmpeg binary downloader
-├── docs/
-│   ├── ARCHITECTURE.md           # System design, dataflow & JSON progress schema
-│   ├── DECISIONS.md              # Architectural & algorithmic decision log
-│   ├── DEVELOPMENT.md            # Local developer onboarding & release runbook
-│   └── AGENSI_LISTING.md         # Commercial marketplace copy, pricing & screenshot shot list
-├── .gitignore
-├── README.md                     # Root documentation
-├── CHANGELOG.md
-├── SECURITY.md
-└── THIRD_PARTY_NOTICES.md
+### Deliverable A: AI Agent Skill Package (Agensi.io)
+Designed to run inside AI agent sandboxes (Claude Code, Cursor, Codex CLI, OpenClaw, Gemini CLI):
+```bash
+# Extract the deterministic skill zip from releases or agensi.io:
+unzip ffmpeg-video-toolkit-pro-skill-v1.0.0.zip -d ~/.agensi/skills/ffmpeg-video-toolkit-pro
+```
+The agent discovers `skill/SKILL.md` and invokes `python skill/scripts/video_toolkit.py <subcommand>` using local FFmpeg.
+
+### Deliverable B: Desktop Application (Windows, macOS, Linux)
+Install native desktop binaries from GitHub Releases:
+- **Windows**: Download and run `.msi` or `.exe` installer.
+- **macOS**: Download `.dmg`, open, and drag to Applications.
+- **Linux**: Download `.AppImage` (`chmod +x` and run) or install `.deb`.
+
+The desktop application bundles pinned FFmpeg, FFprobe, and the native engine sidecar—no Python or FFmpeg installation required on the user's host system.
+
+---
+
+## 2. Command Reference & Real Examples
+
+All subcommands can be executed via the CLI engine or the Desktop GUI:
+
+### 1. `compress` — Target Platform File Size Limits
+Compresses to exact file size limits using true 2-pass libx264, 5% container margin, and bppf quality floor:
+```bash
+# Compress using verified platform preset (Discord 20 MB cap)
+python engine/video_toolkit.py compress -i raw_gameplay.mp4 -o discord_clip.mp4 --preset discord
+
+# Compress to custom 50 MB limit with automatic 720p downscaling guardrail
+python engine/video_toolkit.py compress -i vlog_4k.mp4 -o vlog_compressed.mp4 --target-mb 50 --scale 720p
+```
+
+### 2. `trim-silence` — Audio Dead Air Removal
+Detects silent sections using `silencedetect` and stitches keep-segments using `-filter_complex_script`:
+```bash
+# Trim dead air with -30 dB threshold and 0.1s speech padding
+python engine/video_toolkit.py trim-silence -i podcast_raw.mp4 -o podcast_snappy.mp4 --noise -30dB --min-silence 0.5 --pad 0.1
+```
+
+### 3. `shorts` — 16:9 Landscape to 9:16 Vertical (1080x1920)
+Formats video for TikTok, YouTube Shorts, and Instagram Reels:
+```bash
+# Mode: Blurred scaled background with centered original
+python engine/video_toolkit.py shorts -i stream_clip.mp4 -o reel_blur.mp4 --mode blur
+
+# Mode: Center crop with horizontal face-centering offset
+python engine/video_toolkit.py shorts -i interview.mp4 -o reel_crop.mp4 --mode crop --x-offset 120
+```
+
+### 4. `convert` — Standardize to MP4 (H.264 / AAC / faststart)
+Stream-copies compatible streams without re-encoding; re-encodes incompatible codecs:
+```bash
+# Convert single file
+python engine/video_toolkit.py convert -i obs_recording.mkv -o web_stream.mp4
+
+# Batch convert folder recursively
+python engine/video_toolkit.py convert -i ./footage/ -o ./web_mp4/ --recursive
+```
+
+### 5. `extract-audio` — High-Fidelity Audio Extraction
+Extracts audio to uncompressed WAV, lossless FLAC, or high-quality MP3:
+```bash
+# Extract 320 kbps CBR MP3
+python engine/video_toolkit.py extract-audio -i conference.mp4 -o audio.mp3 --format mp3 --quality 320k
+
+# Extract lossless WAV for editing
+python engine/video_toolkit.py extract-audio -i session.mov -o master_audio.wav --format wav
+```
+
+### 6. `cut` — Fast or Precise Clipping
+```bash
+# Fast stream-copy cut (keyframe snapping)
+python engine/video_toolkit.py cut -i raw.mp4 -o clip1.mp4 --start 00:01:15 --duration 00:00:30
+
+# Frame-accurate precise re-encoded cut
+python engine/video_toolkit.py cut -i raw.mp4 -o clip2.mp4 --start 12.34 --end 45.67 --precise
+```
+
+### 7. `merge` — Seamless Concat Demuxer Join
+Verifies codec, resolution, and fps compatibility before concatenation:
+```bash
+# Seamless join of identical clips
+python engine/video_toolkit.py merge -i part1.mp4 -i part2.mp4 -i part3.mp4 -o complete.mp4
+
+# Join with re-encoding normalization if inputs have mismatched resolutions
+python engine/video_toolkit.py merge -i intro.mp4 -i main.mov -o output.mp4 --reencode
+```
+
+### 8. `gif` — High-Quality Animated GIF / WebP
+Two-pass `palettegen` + `paletteuse` with dithering:
+```bash
+# 15 fps, 480px width, 10-second animated GIF
+python engine/video_toolkit.py gif -i tutorial.mp4 -o demo.gif --fps 15 --width 480 --max-seconds 10
+
+# High-efficiency animated WebP
+python engine/video_toolkit.py gif -i animation.mp4 -o demo.webp --format webp --fps 24
+```
+
+### 9. `speed` — Playback Tempo Adjustments
+Chains `atempo` filters for arbitrary speed factors without audio pitch shifting:
+```bash
+# 2.0x double speed
+python engine/video_toolkit.py speed -i lecture.mp4 -o lecture_fast.mp4 --factor 2.0
+
+# 0.5x smooth slow-motion
+python engine/video_toolkit.py speed -i replay.mp4 -o replay_slow.mp4 --factor 0.5
+```
+
+### 10. `strip-meta` — Complete Privacy Sanitization
+Removes EXIF tags, GPS coordinates, camera serial numbers, and chapters:
+```bash
+python engine/video_toolkit.py strip-meta -i drone_flight.mp4 -o drone_clean.mp4
+```
+
+### 11. `thumbs` — Previews & Contact Sheets
+```bash
+# Single preview frame at 15.5 seconds
+python engine/video_toolkit.py thumbs -i movie.mp4 -o thumb.jpg --timestamps 15.5
+
+# 4x4 tiled contact sheet
+python engine/video_toolkit.py thumbs -i movie.mp4 -o contact_sheet.jpg --sheet --cols 4 --rows 4
 ```
 
 ---
 
-## Core Engine Feature Matrix
+## 3. Verified Platform Size Limits Reference
 
-The core engine is driven via `python engine/video_toolkit.py <subcommand>` (or `python scripts/video_toolkit.py <subcommand>` inside the skill package):
-
-| Subcommand | Purpose | Key Technical Guarantees |
-| :--- | :--- | :--- |
-| `compress` | Target platform byte limits | True 2-pass libx264, 5% safety margin, bppf quality floor, post-encode verification. |
-| `trim-silence` | Remove audio pauses / dead air | `silencedetect` parsing, audio padding, `-filter_complex_script` (handles 500+ cuts safely). |
-| `shorts` | Landscape to 9:16 vertical | 1080x1920 output via center crop (`--mode crop`) or blurred background fill (`--mode blur`). |
-| `convert` | Single or batch container conversion | Stream-copies compatible H.264/AAC streams; re-encodes incompatible codecs. Continues on error. |
-| `extract-audio`| Rip audio track | Supports `wav` (pcm_s16le), `flac` (lossless), and `mp3` (libmp3lame CBR/VBR). |
-| `cut` | Trim clips | Fast keyframe-snapped copy (default) or re-encoded frame-accurate cut (`--precise`). |
-| `merge` | Concatenate video clips | Probes stream params first; rejects mismatches with granular diff unless `--reencode` is passed. |
-| `gif` | Animated GIF or WebP | 2-pass `palettegen` + `paletteuse` with dithering for color banding elimination. |
-| `speed` | Adjust playback tempo | Video `setpts`; chains `atempo` filters for factors $> 2.0\times$ or $< 0.5\times$ without pitch distortion. |
-| `strip-meta` | Privacy / Sanitization | Purges all EXIF metadata, camera serial numbers, GPS tags, and chapters (`+bitexact`). |
-| `thumbs` | Previews & Contact sheets | Extracts frame at timestamp or generates full tiled contact sheets (`tile` filter). |
-| `--check` | Pre-flight environment check | Diagnostic reporting of FFmpeg/FFprobe availability, versions, encoders, and filters. |
-
-### Global Flags Supported Across All Subcommands
-- `--dry-run`: Prints exact FFmpeg command-lines without executing them.
-- `--overwrite`: Refuses to overwrite destination files by default (exit code 4) unless explicitly set.
-- `--json-progress`: Emits one JSON event per line on stdout (`start`, `progress`, `warning`, `done`, `error`) for agent and GUI integration.
-- `--ffmpeg <path>` & `--ffprobe <path>`: Explicit binary overrides (or via `FFMPEG_PATH`/`FFPROBE_PATH` environment variables).
-- `--quiet` / `--verbose`: Controls stderr diagnostic logging.
-
----
-
-## Verified Platform Video Limits Reference
-
-All platform size constraints are stored in `engine/data/platform_limits.json` and verified against official platform specifications:
+Limits are stored in `engine/data/platform_limits.json` and verified against official platform specifications:
 
 | Platform Preset | Target Size | Max Bytes | Last Verified | Status | Official Documentation |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -102,57 +159,58 @@ All platform size constraints are stored in `engine/data/platform_limits.json` a
 
 ---
 
-## Architectural Principles & Security Model
+## 4. Frequently Asked Questions (FAQ)
 
-1. **Zero External Dependencies**: The engine relies exclusively on the Python 3.9+ standard library (`argparse`, `subprocess`, `json`, `pathlib`, `tempfile`, `threading`).
-2. **Subprocess Pipe Deadlock Immunity**: Long-running FFmpeg commands are drained through concurrent background threads (`threading.Thread`) combined with `-nostats -progress pipe:1`.
-3. **No Console Flashing on Windows**: All subprocess calls pass `creationflags = 0x08000000` (`CREATE_NO_WINDOW`) so GUI users never experience flashing terminal windows.
-4. **Marketplace Security Audit**: The codebase passes `scripts/audit_self.py` by construction:
-   - Zero network requests (`no urllib`, `no requests`, `no sockets`).
-   - Zero dynamic code evaluation (`no eval`, `no exec`, `no __import__`).
-   - Zero obfuscation (`no base64 decoding`).
-   - Zero prompt injection patterns or directory escaping.
+**Q: Why does `compress` refuse to encode high-resolution videos to tiny limits?**  
+A: Naive compression below ~0.04 bits-per-pixel-per-frame (bppf) turns video into unwatchable macroblocked garbage. When a computed bitrate is too low for the resolution, the engine halts with exit code 2 and advises you to downscale (e.g. `--scale 720p` or `--scale 480p`) for clean image fidelity.
+
+**Q: Does the desktop application require Python or FFmpeg installed on the user's computer?**  
+A: No. The desktop application bundles the PyInstaller-compiled engine and pinned FFmpeg/FFprobe binaries as self-contained sidecars.
+
+**Q: Can this be run on headless servers or AI agents without a GUI?**  
+A: Yes. Deliverable A runs anywhere with Python 3.9+ and FFmpeg. Passing `--json-progress` gives automated agents typed JSON event lines on stdout.
 
 ---
 
-## Quickstart & Local Verification
+## 5. Troubleshooting & Exit Codes
 
-### 1. Run the Pre-Flight Diagnostic
-```bash
-python engine/video_toolkit.py --check
-```
+| Exit Code | Meaning | Solution |
+|---|---|---|
+| `0` | Success | Normal exit. |
+| `1` | General Runtime Error | Check input file permissions and codec support. |
+| `2` | Argument / Bitrate Error | Bitrate too low for resolution; add `--scale 720p` or check CLI syntax. |
+| `3` | Missing Dependency | Install FFmpeg or pass `--ffmpeg <path>` / `--ffprobe <path>`. |
+| `4` | Verification Error | Output file already exists (use `--overwrite`) or output exceeded target size limit. |
+| `5` | Stream Error | Missing audio stream (e.g. `trim-silence` on video with no sound). |
+| `6` | Cancelled / Aborted | Child process interrupted by SIGINT / SIGTERM. |
 
-### 2. Run the Full Test Suite
-The repository includes both pure-logic offline unit tests and live media integration tests that generate synthetic clips via FFmpeg's `lavfi` filtergraph:
+---
+
+## 6. Building from Source
+
+Detailed build and test instructions are available in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
 ```bash
+# 1. Run local test suite (Python engine + synthetic media)
 python -m unittest discover -s engine/tests
-```
-*(Runs 31 tests covering bitrate math, silence parsing, atempo chaining, shorts cropping, contact sheets, format conversion, and 3-target compress limit enforcement).*
 
-### 3. Run the Security Audit Scanner
-```bash
+# 2. Run AST static security audit
 python scripts/audit_self.py
-```
 
-### 4. Build the Deterministic Agensi Skill Package
-```bash
+# 3. Build Agensi Skill package
 python scripts/build_skill_zip.py
+
+# 4. Run Desktop Vitest suite
+cd desktop && pnpm test
+
+# 5. Run Tauri Rust unit tests
+cargo test --manifest-path desktop/src-tauri/Cargo.toml
 ```
-Outputs `dist/ffmpeg-video-toolkit-pro-skill-v1.0.0.zip` and its companion `.sha256` checksum file.
 
 ---
 
-## Companion Workflows
+## 7. License & Third-Party Notices
 
-When producing short-form vertical content using `shorts`:
-```bash
-python scripts/video_toolkit.py shorts raw_stream.mp4 short.mp4 --mode blur
-```
-We recommend pairing this output with [Subtitle Generator Pro](https://agensi.io/skills/subtitle-generator-pro) to automatically transcribe audio and burn animated karaoke-style subtitles onto your video.
-
----
-
-## License & Third-Party Notices
-
-* **Toolkit Engine & Skill Package**: Licensed under a commercial single-user software license. See [skill/LICENSE](skill/LICENSE).
-* **FFmpeg**: FFmpeg is an open-source software project licensed under the LGPL v2.1+ or GPL v2+ depending on configured build options. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details, attribution, and source-code build scripts.
+* **Toolkit Engine & Agensi Skill Package**: Commercial Single-User License. See [skill/LICENSE](skill/LICENSE).
+* **Desktop Application**: Commercial Desktop Application License.
+* **Third-Party Open Source**: Bundles FFmpeg and libx264 under the GNU General Public License v2+ (GPL v2+). In accordance with GPL v2 § 3, complete machine-readable source code is available at https://github.com/FFmpeg/FFmpeg. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for full notices.
