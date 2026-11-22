@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             python-version: '3.9'
           - os: ubuntu-latest
             python-version: '3.10'
@@ -70,8 +70,10 @@ jobs:
           ffprobe -version
 
       - name: Run Engine Test Suite (Unit & Integration)
+        shell: bash
         env:
           PYTHONPATH: .
+          PYTHONUNBUFFERED: "1"
         run: |
           python -m unittest discover -s engine/tests -v
 
