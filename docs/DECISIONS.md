@@ -114,3 +114,13 @@ This document records the architectural and design decisions made for **FFmpeg V
 * **Decision**:
   - Include an explicit "Licenses" screen in the desktop UI presenting the GPL v2+ notice and machine-readable source offer link (`https://github.com/FFmpeg/FFmpeg`).
   - Detail third-party component licenses (Tauri, Nuxt 3, Vue 3, Lucide) in `THIRD_PARTY_NOTICES.md` and make them accessible directly from the app interface.
+
+---
+
+## 13. Deterministic Cross-Platform CI/CD Package Management & Concurrency
+* **Context**: GitHub Actions runners on macOS default to Apple Silicon arm64 (`macos-latest` / `macos-14`), where third-party setup actions (e.g., `FedericoCarboni/setup-ffmpeg` or `AnimMouse/setup-ffmpeg`) encounter architecture mismatches (`[ERR_FOOTPRINT] arm64 != x86_64`) or unauthenticated GitHub API rate limits. Additionally, truthy concurrency expressions caused premature shutdown of active matrix runners.
+* **Decision**:
+  - Install FFmpeg and FFprobe directly through native OS package managers on runners: Ubuntu `apt-get`, macOS `brew`, and Windows `choco`.
+  - Set `cancel-in-progress: false` across CI workflows to guarantee complete execution without mid-run worker termination.
+  - Optimize the engine matrix to cover Python 3.9-3.12 on Linux, Python 3.11 on Windows, and Python 3.11 on macOS arm64, conserving runner concurrency limits.
+  - Automatically stub `frontendDist` (`../.output/public`) in `desktop/src-tauri/build.rs` to allow isolated backend test builds on fresh checkouts.

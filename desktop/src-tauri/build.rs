@@ -12,6 +12,16 @@ fn main() {
         let _ = fs::create_dir_all(binaries_dir);
     }
 
+    // Ensure frontendDist stub exists so compile/test passes before pnpm generate
+    let frontend_dist = Path::new("../.output/public");
+    if !frontend_dist.exists() {
+        let _ = fs::create_dir_all(frontend_dist);
+        let index_html = frontend_dist.join("index.html");
+        if !index_html.exists() {
+            let _ = fs::write(&index_html, b"<!DOCTYPE html><html><body><h1>FFmpeg Video Toolkit Pro</h1></body></html>");
+        }
+    }
+
     // Ensure all possible target sidecar files exist with dummy content
     // so tauri_build::build() succeeds across Linux, macOS (arm64 + x64), and Windows
     let targets = [
