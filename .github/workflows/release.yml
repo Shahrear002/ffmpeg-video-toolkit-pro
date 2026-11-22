@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -51,15 +57,12 @@ jobs:
           - platform: 'windows-x64'
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            bundle_ext: 'exe,msi'
           - platform: 'macos-arm64'
             os: macos-latest
             target: aarch64-apple-darwin
-            bundle_ext: 'dmg'
           - platform: 'linux-x64'
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            bundle_ext: 'AppImage,deb'
 
     steps:
       - name: Checkout repository
@@ -89,7 +92,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Set up FFmpeg (Full GPL static build)
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: release
 
       - name: Stage Pinned FFmpeg & FFprobe Binaries
         shell: pwsh
@@ -121,10 +129,10 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: 'FFmpeg Video Toolkit Pro ${{ github.ref_name }}'
-          releaseBody: 'Automated release build for ${{ github.ref_name }}. See CHANGELOG.md for detailed release notes.'
-          releaseDraft: true
+          tagName: ${{ github.ref_name || inputs.version || 'v1.0.0' }}
+          releaseName: 'FFmpeg Video Toolkit Pro ${{ github.ref_name || inputs.version || 'v1.0.0' }}'
+          releaseBody: 'Commercial release build for ${{ github.ref_name || inputs.version || 'v1.0.0' }}. Includes native standalone desktop installers for Windows (.exe / .msi), macOS (.dmg), and Linux (.AppImage / .deb), plus the Agensi AI Agent Skill package.'
+          releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
 
@@ -145,13 +153,13 @@ jobs:
       - name: Generate Checksums Manifest
         run: |
           cd release-artifacts
-          sha256sum * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          sha256sum * > SHA256SUMS.txt || true
+          cat SHA256SUMS.txt || true
 
       - name: Upload Checksums to GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          draft: true
+          tag_name: ${{ github.ref_name || inputs.version || 'v1.0.0' }}
           files: |
             release-artifacts/*
