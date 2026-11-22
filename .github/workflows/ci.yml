@@ -75,7 +75,26 @@ jobs:
           PYTHONPATH: .
           PYTHONUNBUFFERED: "1"
         run: |
-          python -m unittest discover -s engine/tests -v
+          set -o pipefail
+          python -m unittest discover -s engine/tests -v 2>&1 | tee test_results.log
+
+      - name: Publish Test Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f test_results.log ]; then
+            echo "### Engine Test Results (${{ matrix.os }} - Py ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 80 test_results.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Test Logs Artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-test-log-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: test_results.log
 
   audit-skill:
     name: Agensi Skill Audit & Package Build
@@ -159,7 +178,27 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - name: Run Tauri Backend Unit Tests
+        shell: bash
         env:
           RUST_BACKTRACE: 1
         run: |
-          cargo test --lib --manifest-path desktop/src-tauri/Cargo.toml --verbose
+          set -o pipefail
+          cargo test --lib --manifest-path desktop/src-tauri/Cargo.toml --verbose 2>&1 | tee tauri_test_results.log
+
+      - name: Publish Tauri Test Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f tauri_test_results.log ]; then
+            echo "### Tauri Backend Test Results (${{ matrix.os }})" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 80 tauri_test_results.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Tauri Test Logs Artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-test-log-${{ matrix.os }}
+          path: tauri_test_results.log
