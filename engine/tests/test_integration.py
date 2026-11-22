@@ -117,7 +117,7 @@ class TestEngineIntegration(unittest.TestCase):
             "trim-silence",
             str(self.silent_clip),
             str(out_file),
-            "--noise", "-30dB",
+            "--noise=-30dB",
             "--min-silence", "0.5",
             "--pad", "0.05",
             "--overwrite",

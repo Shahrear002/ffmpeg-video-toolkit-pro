@@ -31,18 +31,24 @@ fn main() {
     // This produces a valid Mach-O (macOS), ELF (Linux), or PE (Windows) binary so lipo / patchelf never panic
     let dummy_seed = binaries_dir.join(format!("_dummy_seed{}", ext));
     if !dummy_seed.exists() {
+        let temp_src = binaries_dir.join("_dummy_seed.rs");
+        let _ = fs::write(&temp_src, b"fn main() {}\n");
         let _ = std::process::Command::new("rustc")
-            .args(&["-", "--crate-type", "bin", "-o"])
+            .arg(&temp_src)
+            .args(&["--crate-type", "bin", "-o"])
             .arg(&dummy_seed)
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(b"fn main() {}\n");
-                }
-                child.wait()
-            });
+            .status();
+        let _ = fs::remove_file(&temp_src);
+    }
+
+    #[cfg(unix)]
+    if dummy_seed.exists() {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&dummy_seed) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&dummy_seed, perms);
+        }
     }
 
     let targets = [
@@ -57,10 +63,19 @@ fn main() {
             let filename = format!("{}-{}{}", bin_name, tgt, tgt_ext);
             let path = binaries_dir.join(&filename);
             if !path.exists() {
-                if dummy_seed.exists() && tgt_ext == &ext {
+                if dummy_seed.exists() && (tgt_ext == &ext || target.contains(tgt)) {
                     let _ = fs::copy(&dummy_seed, &path);
                 } else {
                     let _ = fs::write(&path, b"#!/bin/sh\nexit 0\n");
+                }
+            }
+            #[cfg(unix)]
+            if path.exists() {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = fs::metadata(&path) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(0o755);
+                    let _ = fs::set_permissions(&path, perms);
                 }
             }
         }

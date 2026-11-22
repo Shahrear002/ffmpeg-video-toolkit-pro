@@ -124,3 +124,12 @@ This document records the architectural and design decisions made for **FFmpeg V
   - Set `cancel-in-progress: false` across CI workflows to guarantee complete execution without mid-run worker termination.
   - Optimize the engine matrix to cover Python 3.9-3.12 on Linux, Python 3.11 on Windows, and Python 3.11 on macOS arm64, conserving runner concurrency limits.
   - Automatically stub `frontendDist` (`../.output/public`) in `desktop/src-tauri/build.rs` to allow isolated backend test builds on fresh checkouts.
+
+---
+
+## 14. Argparse Option Normalization & Cross-Platform Sidecar Stubs
+* **Context**: Python `argparse` across Python 3.9–3.11 parses option arguments starting with `-` (such as `--noise -30dB`) as unrecognized flags instead of values because the string contains non-numeric characters (`dB`). Additionally, Tauri's `externalBin` bundling requires valid target binary files (ELF on Linux, Mach-O on macOS, PE on Windows) with executable permissions (`0o755`) so `patchelf` and `lipo` do not fail during `cargo test`.
+* **Decision**:
+  - Normalize space-separated negative option arguments (e.g. `--noise -30dB` -> `--noise=-30dB`) in `engine/video_toolkit.py`'s `main()` before invoking `argparse.parse_args()`.
+  - Compile real dummy seed executables using host `rustc` via a temporary source file in `desktop/src-tauri/build.rs` and apply `0o755` Unix executable permissions to all target sidecar stubs.
+  - In `handle_gif`, enforce `-an` and `scale={width}:-2:flags=lanczos` to ensure even-dimension scaling and prevent audio stream muxing errors in WebP and GIF animations across platforms.

@@ -1322,17 +1322,18 @@ def handle_gif(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
     if fmt == "webp":
         cmd.extend([
-            "-vf", f"fps={fps},scale={width}:-1:flags=lanczos",
+            "-vf", f"fps={fps},scale={width}:-2:flags=lanczos",
             "-c:v", "libwebp",
             "-lossless", "0",
             "-q:v", "75",
             "-loop", "0",
+            "-an",
             str(output_path),
         ])
     else:
         # High quality palettegen + paletteuse filtergraph
-        vf = f"fps={fps},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither={dither}"
-        cmd.extend(["-vf", vf, str(output_path)])
+        vf = f"fps={fps},scale={width}:-2:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither={dither}"
+        cmd.extend(["-vf", vf, "-an", str(output_path)])
 
     runner.execute_ffmpeg_with_progress(cmd, duration_s)
     runner.logger.emit_event("done", {"output": str(output_path), "bytes": output_path.stat().st_size})
@@ -1629,8 +1630,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    if argv is None:
+        raw_args = list(sys.argv[1:])
+    else:
+        raw_args = list(argv)
+
+    # Normalize options where the value starts with '-' (like --noise -30dB) so argparse does not confuse it for an option flag
+    normalized_argv: List[str] = []
+    i = 0
+    while i < len(raw_args):
+        arg = raw_args[i]
+        if arg in ("--noise",) and i + 1 < len(raw_args) and raw_args[i + 1].startswith("-") and not raw_args[i + 1].startswith("--"):
+            normalized_argv.append(f"{arg}={raw_args[i + 1]}")
+            i += 2
+        else:
+            normalized_argv.append(arg)
+            i += 1
+
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(normalized_argv)
 
     logger = ToolkitLogger(
         json_mode=args.json_progress,
