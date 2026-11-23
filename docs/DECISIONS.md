@@ -159,4 +159,21 @@ This document records the architectural and design decisions made for **FFmpeg V
     - If supported, execute an ordered multi-strategy candidate cascade (`libwebp` / `libwebp_anim` with appropriate pixel format and muxer loop flags).
   - In integration test `test_gif_and_webp_generation`, assert `ExitCode.SUCCESS` when WebP encoders are present, and assert clean graceful `ExitCode.DEPENDENCY_ERROR` (code 5) when absent on minimal package-managed builds.
 
+---
+
+## 17. Multi-Architecture Desktop Release Matrix, WiX Icon Configuration & Conditional Code Signing
+* **Context**:
+  - In `desktop/src-tauri/tauri.conf.json`, omission of `bundle.icon` caused Windows WiX packaging (`.msi`) to fail with `failed to bundle project: Couldn't find a .ico icon`, despite `icons/icon.ico` existing in the filesystem.
+  - In `.github/workflows/release.yml`, passing `APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}` unconditionally caused `tauri-action` to attempt `security import -f pkcs12` on empty strings when repository secrets were unconfigured, aborting with `SecKeychainItemImport: Unable to decode the provided data`.
+  - The macOS release matrix only targeted `macos-arm64` (`aarch64-apple-darwin`), leaving Intel Mac users unable to execute the application.
+* **Decision**:
+  - Explicitly declare the icon array (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.ico`, `icon.icns`) under `bundle.icon` in `desktop/src-tauri/tauri.conf.json` and generate `desktop/src-tauri/icons/icon.icns`.
+  - Conditionally export Apple code signing environment variables only when `secrets.APPLE_CERTIFICATE` is non-empty. When unconfigured, `tauri-action` builds clean, unsigned native DMG packages without keychain import errors.
+  - Expand the release matrix to build native installers for all major desktop architectures:
+    - `windows-x64` (`x86_64-pc-windows-msvc` on `windows-latest`)
+    - `macos-arm64` (`aarch64-apple-darwin` on `macos-latest` for Apple Silicon M1/M2/M3/M4)
+    - `macos-intel` (`x86_64-apple-darwin` on `macos-13` for Intel Macs)
+    - `linux-x64` (`x86_64-unknown-linux-gnu` on `ubuntu-22.04`)
+
+
 

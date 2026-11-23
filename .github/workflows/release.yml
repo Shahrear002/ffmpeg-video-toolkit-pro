@@ -63,6 +63,9 @@ jobs:
           - platform: 'macos-arm64'
             os: macos-latest
             target: aarch64-apple-darwin
+          - platform: 'macos-intel'
+            os: macos-13
+            target: x86_64-apple-darwin
           - platform: 'linux-x64'
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -123,13 +126,13 @@ jobs:
       - name: Stage Pinned FFmpeg & FFprobe Binaries
         shell: pwsh
         run: |
-          python scripts/fetch_ffmpeg.py
+          python scripts/fetch_ffmpeg.py --target ${{ matrix.target }}
 
       - name: Build Engine Sidecar Binary
         shell: pwsh
         run: |
           pip install pyinstaller
-          python scripts/build_engine_sidecar.py
+          python scripts/build_engine_sidecar.py --target ${{ matrix.target }}
 
       - name: Install Frontend Dependencies & Build Static SPA
         run: |
@@ -137,22 +140,32 @@ jobs:
           pnpm --dir desktop approve-builds --all
           pnpm --dir desktop generate
 
+      - name: Configure macOS Code Signing (Optional)
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE_SECRET != ''
+        env:
+          APPLE_CERTIFICATE_SECRET: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD_SECRET: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_SECRET: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE_SECRET" >> $GITHUB_ENV
+          echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD_SECRET" >> $GITHUB_ENV
+          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY_SECRET" >> $GITHUB_ENV
+          echo "APPLE_ID=$APPLE_ID_SECRET" >> $GITHUB_ENV
+          echo "APPLE_PASSWORD=$APPLE_PASSWORD_SECRET" >> $GITHUB_ENV
+          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID_SECRET" >> $GITHUB_ENV
+
       - name: Build Tauri Application Bundle
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional Code Signing Secrets (Skipped cleanly if empty)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: desktop
           tagName: ${{ env.RELEASE_VERSION }}
           releaseName: "FFmpeg Video Toolkit Pro ${{ env.RELEASE_VERSION }}"
-          releaseBody: "Commercial release build for ${{ env.RELEASE_VERSION }}. Includes native standalone desktop installers for Windows (.exe / .msi), macOS (.dmg), and Linux (.AppImage / .deb), plus the Agensi AI Agent Skill package."
+          releaseBody: "Commercial release build for ${{ env.RELEASE_VERSION }}. Includes native standalone desktop installers for Windows (.exe / .msi), macOS Apple Silicon (.dmg), macOS Intel (.dmg), and Linux (.AppImage / .deb), plus the Agensi AI Agent Skill package."
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
