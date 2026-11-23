@@ -145,3 +145,19 @@ This document records the architectural and design decisions made for **FFmpeg V
   - Re-encode all 13 PNG icons in `desktop/src-tauri/icons/` to true 4-channel RGBA (8-bit depth, color type 6).
   - Implement dynamic container safety margin expansion in `calculate_two_pass_bitrate`: targets under 150 KB use a 12% margin, targets under 500 KB use 8%, and standard targets retain 5%.
   - Add `format=yuv420p` to the video filterchain for WebP animations in `handle_gif`.
+
+---
+
+## 16. Multi-Platform Animated WebP Encoder Cascade
+* **Context**:
+  - FFmpeg versions vary significantly across distributions: Ubuntu 22.04 supplies FFmpeg 4.4, newer Ubuntu releases provide FFmpeg 6.x, Windows Chocolatey provides FFmpeg 7.x, and Homebrew on macOS Apple Silicon provides FFmpeg 7.x.
+  - In FFmpeg 7+, animated WebP encoding introduces `libwebp_anim` alongside `libwebp`. Certain builds reject `-q:v` for `libwebp`, fail when automatic encoder selection is attempted without an explicit `-c:v` option, or require specific pixel format definitions (`-pix_fmt yuv420p`).
+* **Decision**:
+  - Implement an ordered multi-strategy encoder cascade in `handle_gif`:
+    1. Standard `libwebp` with `-pix_fmt yuv420p`, `-quality 75`, and `-loop 0`.
+    2. Native `libwebp_anim` for modern FFmpeg builds with `-quality 75` and `-loop 0`.
+    3. Filtergraph-based `format=yuv420p` with `-quality 75` and `-loop 0`.
+    4. Minimal `libwebp` with `-loop 0`.
+    5. Baseline `libwebp` without additional muxer flags.
+  - Automatically clean up any partial zero-byte or corrupt output before progressing to the next candidate in the cascade.
+

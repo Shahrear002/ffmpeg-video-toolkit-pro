@@ -32,6 +32,12 @@ def main():
     if current_block:
         failures.append("\n".join(current_block))
 
+    # Also capture explicit engine runtime errors (e.g. [ERROR ...] or FFmpeg execution failed)
+    runtime_errors = [line for line in lines if line.startswith("[ERROR ") or "FFmpeg execution failed" in line]
+    if runtime_errors:
+        err_summary = " -> ".join(runtime_errors[:5])
+        print(f"::error title=Runtime Engine Errors::{err_summary[:1500]}")
+
     for fail in failures:
         msg = fail.replace("\r", " ").replace("\n", " -> ")
         print(f"::error title=Test Failure::{msg[:1500]}")

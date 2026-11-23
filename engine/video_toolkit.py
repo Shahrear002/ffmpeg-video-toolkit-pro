@@ -1332,30 +1332,40 @@ def handle_gif(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     cmd.extend(["-i", str(input_path)])
 
     if fmt == "webp":
-        cmd.extend([
-            "-vf", f"fps={fps},scale={width}:-2:flags=lanczos,format=yuv420p",
-            "-c:v", "libwebp",
-            "-lossless", "0",
-            "-q:v", "75",
-            "-loop", "0",
-            "-an",
-            str(output_path),
-        ])
-        try:
-            runner.execute_ffmpeg_with_progress(cmd, duration_s)
-        except Exception:
-            # Fallback for systems where libwebp lacks specific options or uses different encoder defaults
-            fallback_cmd = ["-y"]
+        webp_candidates = [
+            # Candidate 1: Standard libwebp with -pix_fmt yuv420p, -quality 75, -loop 0
+            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-pix_fmt", "yuv420p", "-quality", "75", "-loop", "0", "-an", str(output_path)],
+            # Candidate 2: libwebp_anim (modern animated WebP encoder in FFmpeg 6/7 on macOS Apple Silicon / Linux)
+            ["-c:v", "libwebp_anim", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-quality", "75", "-loop", "0", "-an", str(output_path)],
+            # Candidate 3: Standard libwebp with format filter
+            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos,format=yuv420p", "-quality", "75", "-loop", "0", "-an", str(output_path)],
+            # Candidate 4: Minimal libwebp with loop 0
+            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-loop", "0", "-an", str(output_path)],
+            # Candidate 5: Minimal libwebp without loop flag
+            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-an", str(output_path)],
+        ]
+        success = False
+        last_error = None
+        for cand in webp_candidates:
+            cand_cmd = ["-y"]
             if args.max_seconds:
-                fallback_cmd.extend(["-t", str(args.max_seconds)])
-            fallback_cmd.extend([
-                "-i", str(input_path),
-                "-vf", f"fps={fps},scale={width}:-2:flags=lanczos",
-                "-loop", "0",
-                "-an",
-                str(output_path),
-            ])
-            runner.execute_ffmpeg_with_progress(fallback_cmd, duration_s)
+                cand_cmd.extend(["-t", str(args.max_seconds)])
+            cand_cmd.extend(["-i", str(input_path)])
+            cand_cmd.extend(cand)
+            try:
+                runner.execute_ffmpeg_with_progress(cand_cmd, duration_s)
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    success = True
+                    break
+            except Exception as e:
+                last_error = e
+                if output_path.exists():
+                    try:
+                        output_path.unlink()
+                    except Exception:
+                        pass
+        if not success:
+            raise last_error or RuntimeError("WebP animation generation failed across all encoder strategies")
     else:
         # High quality palettegen + paletteuse filtergraph
         vf = f"fps={fps},scale={width}:-2:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither={dither}"
