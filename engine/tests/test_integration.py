@@ -299,8 +299,11 @@ class TestEngineIntegration(unittest.TestCase):
             "--max-seconds", "1.5",
             "--overwrite",
         ])
-        self.assertEqual(code_webp, ExitCode.SUCCESS)
-        self.assertTrue(out_webp.exists())
+        if self.runner.has_encoder("libwebp") or self.runner.has_encoder("libwebp_anim"):
+            self.assertEqual(code_webp, ExitCode.SUCCESS)
+            self.assertTrue(out_webp.exists())
+        else:
+            self.assertEqual(code_webp, ExitCode.DEPENDENCY_ERROR)
 
     def test_speed_adjustment(self):
         out_file = Path(self.temp_dir) / "speed2x.mp4"

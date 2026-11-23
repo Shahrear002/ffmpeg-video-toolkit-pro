@@ -225,6 +225,23 @@ class FFmpegRunner:
         if not self.check_executable(self.ffprobe):
             raise FileNotFoundError(f"FFprobe executable not found: '{self.ffprobe}'")
 
+    def has_encoder(self, encoder_name: str) -> bool:
+        """Checks if the configured FFmpeg binary supports the given encoder."""
+        if not hasattr(self, "_cached_encoders"):
+            try:
+                proc = subprocess.run(
+                    [self.ffmpeg, "-encoders"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    creationflags=CREATE_NO_WINDOW,
+                    text=True,
+                    check=False,
+                )
+                self._cached_encoders = set(re.findall(r"^\s*[A-Z.]+\s+([a-zA-Z0-9_\-]+)", proc.stdout, re.MULTILINE))
+            except Exception:
+                self._cached_encoders = set()
+        return encoder_name in self._cached_encoders
+
     def run_probe(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Runs ffprobe on the input file and returns parsed JSON metadata."""
         self.verify_dependencies()
@@ -1332,18 +1349,28 @@ def handle_gif(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     cmd.extend(["-i", str(input_path)])
 
     if fmt == "webp":
-        webp_candidates = [
-            # Candidate 1: Standard libwebp with -pix_fmt yuv420p, -quality 75, -loop 0
-            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-pix_fmt", "yuv420p", "-quality", "75", "-loop", "0", "-an", str(output_path)],
-            # Candidate 2: libwebp_anim (modern animated WebP encoder in FFmpeg 6/7 on macOS Apple Silicon / Linux)
-            ["-c:v", "libwebp_anim", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-quality", "75", "-loop", "0", "-an", str(output_path)],
-            # Candidate 3: Standard libwebp with format filter
-            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos,format=yuv420p", "-quality", "75", "-loop", "0", "-an", str(output_path)],
-            # Candidate 4: Minimal libwebp with loop 0
-            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-loop", "0", "-an", str(output_path)],
-            # Candidate 5: Minimal libwebp without loop flag
-            ["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-an", str(output_path)],
-        ]
+        has_libwebp = runner.has_encoder("libwebp")
+        has_libwebp_anim = runner.has_encoder("libwebp_anim")
+        if not has_libwebp and not has_libwebp_anim:
+            runner.logger.emit_event("error", {
+                "code": ExitCode.DEPENDENCY_ERROR,
+                "message": "WebP encoding requires 'libwebp' or 'libwebp_anim' which is not available in the installed FFmpeg build.",
+            })
+            return ExitCode.DEPENDENCY_ERROR
+
+        webp_candidates = []
+        if has_libwebp:
+            webp_candidates.append(["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-pix_fmt", "yuv420p", "-quality", "75", "-loop", "0", "-an", str(output_path)])
+        if has_libwebp_anim:
+            webp_candidates.append(["-c:v", "libwebp_anim", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-quality", "75", "-loop", "0", "-an", str(output_path)])
+        if has_libwebp:
+            webp_candidates.append(["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos,format=yuv420p", "-quality", "75", "-loop", "0", "-an", str(output_path)])
+            webp_candidates.append(["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-loop", "0", "-an", str(output_path)])
+            webp_candidates.append(["-c:v", "libwebp", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-an", str(output_path)])
+        elif has_libwebp_anim:
+            webp_candidates.append(["-c:v", "libwebp_anim", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-loop", "0", "-an", str(output_path)])
+            webp_candidates.append(["-c:v", "libwebp_anim", "-vf", f"fps={fps},scale={width}:-2:flags=lanczos", "-an", str(output_path)])
+
         success = False
         last_error = None
         for cand in webp_candidates:

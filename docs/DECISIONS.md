@@ -148,16 +148,15 @@ This document records the architectural and design decisions made for **FFmpeg V
 
 ---
 
-## 16. Multi-Platform Animated WebP Encoder Cascade
+## 16. Multi-Platform Animated WebP Encoder Detection & Capability Cascade
 * **Context**:
-  - FFmpeg versions vary significantly across distributions: Ubuntu 22.04 supplies FFmpeg 4.4, newer Ubuntu releases provide FFmpeg 6.x, Windows Chocolatey provides FFmpeg 7.x, and Homebrew on macOS Apple Silicon provides FFmpeg 7.x.
-  - In FFmpeg 7+, animated WebP encoding introduces `libwebp_anim` alongside `libwebp`. Certain builds reject `-q:v` for `libwebp`, fail when automatic encoder selection is attempted without an explicit `-c:v` option, or require specific pixel format definitions (`-pix_fmt yuv420p`).
+  - FFmpeg installations vary significantly across distributions: Ubuntu 22.04 supplies FFmpeg 4.4, Ubuntu 24.04 provides FFmpeg 6.x, Windows Chocolatey provides FFmpeg 7.x, and Homebrew on macOS Apple Silicon provides minimal FFmpeg 9.x bottles built without `--enable-libwebp`.
+  - Attempting to invoke `-c:v libwebp` or output `.webp` on an FFmpeg binary compiled without WebP support causes fatal `Encoder not found` errors (exit code 8).
 * **Decision**:
-  - Implement an ordered multi-strategy encoder cascade in `handle_gif`:
-    1. Standard `libwebp` with `-pix_fmt yuv420p`, `-quality 75`, and `-loop 0`.
-    2. Native `libwebp_anim` for modern FFmpeg builds with `-quality 75` and `-loop 0`.
-    3. Filtergraph-based `format=yuv420p` with `-quality 75` and `-loop 0`.
-    4. Minimal `libwebp` with `-loop 0`.
-    5. Baseline `libwebp` without additional muxer flags.
-  - Automatically clean up any partial zero-byte or corrupt output before progressing to the next candidate in the cascade.
+  - In `FFmpegRunner`, provide dynamic cached capability detection via `has_encoder(name)`.
+  - In `handle_gif`, verify availability of `libwebp` or `libwebp_anim` before encoding:
+    - If neither encoder is compiled into the host FFmpeg binary, emit a structured error event and cleanly return `ExitCode.DEPENDENCY_ERROR` (code 5).
+    - If supported, execute an ordered multi-strategy candidate cascade (`libwebp` / `libwebp_anim` with appropriate pixel format and muxer loop flags).
+  - In integration test `test_gif_and_webp_generation`, assert `ExitCode.SUCCESS` when WebP encoders are present, and assert clean graceful `ExitCode.DEPENDENCY_ERROR` (code 5) when absent on minimal package-managed builds.
+
 
