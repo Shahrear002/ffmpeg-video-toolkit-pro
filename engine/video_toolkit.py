@@ -447,9 +447,9 @@ def calculate_two_pass_bitrate(
     effective_margin = safety_margin
     if safety_margin == 0.05:
         if target_bytes < 150_000:
-            effective_margin = 0.12
+            effective_margin = 0.15
         elif target_bytes < 500_000:
-            effective_margin = 0.08
+            effective_margin = 0.10
 
     effective_target_bytes = target_bytes * (1.0 - effective_margin)
     total_bits = effective_target_bytes * 8.0
@@ -1338,12 +1338,27 @@ def handle_gif(runner: FFmpegRunner, args: argparse.Namespace) -> int:
             "-an",
             str(output_path),
         ])
+        try:
+            runner.execute_ffmpeg_with_progress(cmd, duration_s)
+        except Exception:
+            # Fallback for systems where libwebp lacks specific options or uses different encoder defaults
+            fallback_cmd = ["-y"]
+            if args.max_seconds:
+                fallback_cmd.extend(["-t", str(args.max_seconds)])
+            fallback_cmd.extend([
+                "-i", str(input_path),
+                "-vf", f"fps={fps},scale={width}:-2:flags=lanczos",
+                "-loop", "0",
+                "-an",
+                str(output_path),
+            ])
+            runner.execute_ffmpeg_with_progress(fallback_cmd, duration_s)
     else:
         # High quality palettegen + paletteuse filtergraph
         vf = f"fps={fps},scale={width}:-2:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither={dither}"
         cmd.extend(["-vf", vf, "-an", str(output_path)])
+        runner.execute_ffmpeg_with_progress(cmd, duration_s)
 
-    runner.execute_ffmpeg_with_progress(cmd, duration_s)
     runner.logger.emit_event("done", {"output": str(output_path), "bytes": output_path.stat().st_size})
     return ExitCode.SUCCESS
 

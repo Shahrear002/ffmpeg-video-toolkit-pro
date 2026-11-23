@@ -96,6 +96,14 @@ jobs:
           if [ -f test_results.log ]; then
             echo "===== FULL TEST LOG ON FAILURE ====="
             cat test_results.log
+            python -c '
+with open("test_results.log", "r", errors="ignore") as f:
+    text = f.read()
+import re
+lines = [l.strip() for l in text.splitlines() if any(k in l for k in ["FAIL:", "ERROR:", "AssertionError", "RuntimeError", "exceeded target limit"])]
+msg = " | ".join(lines[-15:]) if lines else "Exit code 1"
+print(f"::error title=Test Failures on ${{ matrix.os }}::{msg[:1000]}")
+'
           fi
 
       - name: Upload Test Logs Artifact
