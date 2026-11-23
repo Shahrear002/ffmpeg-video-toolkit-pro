@@ -96,6 +96,7 @@ jobs:
           if [ -f test_results.log ]; then
             echo "===== FULL TEST LOG ON FAILURE ====="
             cat test_results.log
+            python scripts/emit_failure_annotation.py
           fi
 
       - name: Upload Test Logs Artifact
