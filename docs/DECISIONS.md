@@ -133,3 +133,15 @@ This document records the architectural and design decisions made for **FFmpeg V
   - Normalize space-separated negative option arguments (e.g. `--noise -30dB` -> `--noise=-30dB`) in `engine/video_toolkit.py`'s `main()` before invoking `argparse.parse_args()`.
   - Compile real dummy seed executables using host `rustc` via a temporary source file in `desktop/src-tauri/build.rs` and apply `0o755` Unix executable permissions to all target sidecar stubs.
   - In `handle_gif`, enforce `-an` and `scale={width}:-2:flags=lanczos` to ensure even-dimension scaling and prevent audio stream muxing errors in WebP and GIF animations across platforms.
+
+---
+
+## 15. Tauri 4-Channel RGBA Icon Format & Dynamic Small-Target Compression Headroom
+* **Context**:
+  - In Tauri v2, `tauri::generate_context!()` compiles desktop window icons during `cargo test --lib` and panics with `proc macro panicked: icon .../icon.png is not RGBA` if PNGs are encoded in RGB (3-channel) format rather than true RGBA (4-channel).
+  - On macOS Apple Silicon and Windows runners with newer FFmpeg versions, small target sizes (e.g. 80KB in `test_compress_three_different_inputs_and_targets`) exceeded target bytes by ~500 bytes when using a static 5% safety margin due to fixed MP4 container header (moov atom, faststart sample tables) overhead.
+  - `libwebp` on macOS Apple Silicon requires explicit `yuv420p` pixel format to avoid unsupported color conversion failures.
+* **Decision**:
+  - Re-encode all 13 PNG icons in `desktop/src-tauri/icons/` to true 4-channel RGBA (8-bit depth, color type 6).
+  - Implement dynamic container safety margin expansion in `calculate_two_pass_bitrate`: targets under 150 KB use a 12% margin, targets under 500 KB use 8%, and standard targets retain 5%.
+  - Add `format=yuv420p` to the video filterchain for WebP animations in `handle_gif`.

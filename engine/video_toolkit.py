@@ -443,7 +443,15 @@ def calculate_two_pass_bitrate(
     if target_bytes <= 0:
         raise ValueError(f"Invalid target size: {target_bytes} bytes")
 
-    effective_target_bytes = target_bytes * (1.0 - safety_margin)
+    # Dynamic safety margin expansion for small envelopes: fixed MP4/container headers take more percentage of tiny files
+    effective_margin = safety_margin
+    if safety_margin == 0.05:
+        if target_bytes < 150_000:
+            effective_margin = 0.12
+        elif target_bytes < 500_000:
+            effective_margin = 0.08
+
+    effective_target_bytes = target_bytes * (1.0 - effective_margin)
     total_bits = effective_target_bytes * 8.0
     total_bitrate_bps = total_bits / duration_s
 
@@ -1322,7 +1330,7 @@ def handle_gif(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
     if fmt == "webp":
         cmd.extend([
-            "-vf", f"fps={fps},scale={width}:-2:flags=lanczos",
+            "-vf", f"fps={fps},scale={width}:-2:flags=lanczos,format=yuv420p",
             "-c:v", "libwebp",
             "-lossless", "0",
             "-q:v", "75",
