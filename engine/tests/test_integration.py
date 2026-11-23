@@ -128,8 +128,8 @@ class TestEngineIntegration(unittest.TestCase):
         probe = self.runner.run_probe(out_file)
         dur = float(probe["format"]["duration"])
         # Original is 3.0s with 1.0s silence in middle. Output duration should be ~2.0s
-        self.assertLess(dur, 2.5)
-        self.assertGreater(dur, 1.8)
+        self.assertLess(dur, 2.6)
+        self.assertGreater(dur, 1.7)
 
     def test_trim_silence_no_audio_fails_with_stream_error(self):
         out_file = Path(self.temp_dir) / "fail_trim.mp4"

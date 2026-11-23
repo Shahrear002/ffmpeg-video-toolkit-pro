@@ -515,17 +515,17 @@ def parse_silencedetect_stderr(stderr_text: str, total_duration: float) -> List[
     silences: List[Tuple[float, float]] = []
     current_start: Optional[float] = None
 
-    start_pattern = re.compile(r"silence_start:\s*([0-9.]+)")
-    end_pattern = re.compile(r"silence_end:\s*([0-9.]+)")
+    start_pattern = re.compile(r"silence_start:\s*(-?[0-9.]+)")
+    end_pattern = re.compile(r"silence_end:\s*(-?[0-9.]+)")
 
     for line in stderr_text.splitlines():
         start_match = start_pattern.search(line)
         if start_match:
-            current_start = float(start_match.group(1))
+            current_start = max(0.0, float(start_match.group(1)))
             continue
         end_match = end_pattern.search(line)
         if end_match:
-            end_val = float(end_match.group(1))
+            end_val = min(total_duration, float(end_match.group(1)))
             start_val = current_start if current_start is not None else 0.0
             silences.append((start_val, end_val))
             current_start = None
@@ -846,7 +846,7 @@ def handle_trim_silence(runner: FFmpegRunner, args: argparse.Namespace) -> int:
         "-i", str(input_path),
         "-af", f"silencedetect=noise={noise_db}:d={args.min_silence}",
         "-f", "null",
-        NULL_SINK,
+        "-",
     ]
     runner.logger.debug(f"Running silencedetect: {' '.join(detect_cmd)}")
     det_proc = subprocess.run(
@@ -871,33 +871,36 @@ def handle_trim_silence(runner: FFmpegRunner, args: argparse.Namespace) -> int:
         runner.logger.emit_event("done", {"output": str(output_path), "bytes": output_path.stat().st_size})
         return ExitCode.SUCCESS
 
-    # Build filter complex script file to avoid OS command line length limits
-    temp_dir = tempfile.mkdtemp(prefix="fvt_trim_")
-    _REGISTERED_TEMP_DIRS.append(temp_dir)
+    # Build filter complex representation
+    filter_lines: List[str] = []
+    n_segs = len(keep_segments)
+
+    for i, (s, e) in enumerate(keep_segments):
+        if has_video:
+            filter_lines.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}];")
+        filter_lines.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}];")
+
+    concat_inputs = "".join(f"[v{i}][a{i}]" if has_video else f"[a{i}]" for i in range(n_segs))
+    v_flag = "1" if has_video else "0"
+    filter_lines.append(f"{concat_inputs}concat=n={n_segs}:v={v_flag}:a=1[outv][outa]" if has_video else f"{concat_inputs}concat=n={n_segs}:v=0:a=1[outa]")
+
+    filter_str = "".join(filter_lines)
+    encoder, _ = get_video_encoder("h264")
+
+    temp_dir = None
     try:
-        script_file = os.path.join(temp_dir, "filter_script.txt")
-        filter_lines: List[str] = []
-        n_segs = len(keep_segments)
+        trim_cmd = ["-y", "-i", str(input_path)]
+        # For concise filtergraphs (< 4000 chars), pass directly on CLI to avoid script file encoding issues
+        if len(filter_str) < 4000:
+            trim_cmd.extend(["-filter_complex", filter_str])
+        else:
+            temp_dir = tempfile.mkdtemp(prefix="fvt_trim_")
+            _REGISTERED_TEMP_DIRS.append(temp_dir)
+            script_file = os.path.join(temp_dir, "filter_script.txt")
+            with open(script_file, "w", encoding="utf-8", newline="\n") as f:
+                f.write(filter_str)
+            trim_cmd.extend(["-filter_complex_script", Path(script_file).as_posix()])
 
-        for i, (s, e) in enumerate(keep_segments):
-            dur = e - s
-            if has_video:
-                filter_lines.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}];")
-            filter_lines.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}];")
-
-        concat_inputs = "".join(f"[v{i}][a{i}]" if has_video else f"[a{i}]" for i in range(n_segs))
-        v_flag = "1" if has_video else "0"
-        filter_lines.append(f"{concat_inputs}concat=n={n_segs}:v={v_flag}:a=1[outv][outa]" if has_video else f"{concat_inputs}concat=n={n_segs}:v=0:a=1[outa]")
-
-        with open(script_file, "w", encoding="utf-8") as f:
-            f.write("\n".join(filter_lines))
-
-        encoder, _ = get_video_encoder("h264")
-        trim_cmd = [
-            "-y",
-            "-i", str(input_path),
-            "-filter_complex_script", script_file,
-        ]
         if has_video:
             trim_cmd.extend(["-map", "[outv]", "-map", "[outa]", "-c:v", encoder, "-pix_fmt", "yuv420p"])
         else:
@@ -918,9 +921,9 @@ def handle_trim_silence(runner: FFmpegRunner, args: argparse.Namespace) -> int:
         })
         return ExitCode.SUCCESS
     finally:
-        if temp_dir in _REGISTERED_TEMP_DIRS:
+        if temp_dir and temp_dir in _REGISTERED_TEMP_DIRS:
             _REGISTERED_TEMP_DIRS.remove(temp_dir)
-        shutil.rmtree(temp_dir, ignore_errors=True)
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def handle_shorts(runner: FFmpegRunner, args: argparse.Namespace) -> int:
