@@ -51,32 +51,36 @@ fn main() {
         }
     }
 
-    let targets = [
-        ("x86_64-pc-windows-msvc", ".exe"),
-        ("aarch64-apple-darwin", ""),
-        ("x86_64-apple-darwin", ""),
-        ("x86_64-unknown-linux-gnu", ""),
-    ];
-
-    for (tgt, tgt_ext) in &targets {
-        for bin_name in &["video_toolkit", "ffmpeg", "ffprobe"] {
-            let filename = format!("{}-{}{}", bin_name, tgt, tgt_ext);
-            let path = binaries_dir.join(&filename);
-            if !path.exists() {
-                if dummy_seed.exists() && (tgt_ext == &ext || target.contains(tgt)) {
-                    let _ = fs::copy(&dummy_seed, &path);
-                } else {
-                    let _ = fs::write(&path, b"#!/bin/sh\nexit 0\n");
-                }
+    // Remove any leftover sidecars that don't match the active target to prevent Tauri from attempting universal lipo or cross-architecture packaging
+    if let Ok(entries) = fs::read_dir(binaries_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if (name.starts_with("video_toolkit-") || name.starts_with("ffmpeg-") || name.starts_with("ffprobe-"))
+                && !name.contains(&target)
+            {
+                let _ = fs::remove_file(entry.path());
             }
-            #[cfg(unix)]
-            if path.exists() {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = fs::metadata(&path) {
-                    let mut perms = meta.permissions();
-                    perms.set_mode(0o755);
-                    let _ = fs::set_permissions(&path, perms);
-                }
+        }
+    }
+
+    // Tauri externalBin only needs stubs for the active target architecture.
+    for bin_name in &["video_toolkit", "ffmpeg", "ffprobe"] {
+        let filename = format!("{}-{}{}", bin_name, target, ext);
+        let path = binaries_dir.join(&filename);
+        if !path.exists() || path.metadata().map(|m| m.len()).unwrap_or(0) < 100 {
+            if dummy_seed.exists() {
+                let _ = fs::copy(&dummy_seed, &path);
+            } else {
+                let _ = fs::write(&path, b"#!/bin/sh\nexit 0\n");
+            }
+        }
+        #[cfg(unix)]
+        if path.exists() {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::metadata(&path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = fs::set_permissions(&path, perms);
             }
         }
     }

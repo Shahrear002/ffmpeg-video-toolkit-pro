@@ -89,6 +89,15 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Dump Full Test Failure Log
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f test_results.log ]; then
+            echo "===== FULL TEST LOG ON FAILURE ====="
+            cat test_results.log
+          fi
+
       - name: Upload Test Logs Artifact
         if: failure()
         uses: actions/upload-artifact@v4
@@ -194,6 +203,15 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             tail -n 80 tauri_test_results.log >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Dump Full Tauri Test Failure Log
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f tauri_test_results.log ]; then
+            echo "===== FULL TAURI TEST LOG ON FAILURE ====="
+            cat tauri_test_results.log
           fi
 
       - name: Upload Tauri Test Logs Artifact
