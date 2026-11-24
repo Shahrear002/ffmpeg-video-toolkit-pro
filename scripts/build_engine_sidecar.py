@@ -84,7 +84,7 @@ def build_sidecar(target_triple: str, out_dir: Path, repo_root: Path) -> Path:
 
     if target_triple == "universal-apple-darwin":
         for arch in ["aarch64-apple-darwin", "x86_64-apple-darwin"]:
-            arch_bin = out_dir / f"{binary_stem}-{arch}{ext}"
+            arch_bin = out_dir / f"video_toolkit-{arch}{ext}"
             shutil.copy2(expected_output, arch_bin)
             if not ext:
                 arch_bin.chmod(0o755)
