@@ -174,5 +174,21 @@ This document records the architectural and design decisions made for **FFmpeg V
     - `macos-universal` (`universal-apple-darwin` on `macos-latest` producing a single Universal DMG that natively supports both Apple Silicon M1/M2/M3/M4 and Intel Macs)
     - `linux-x64` (`x86_64-unknown-linux-gnu` on `ubuntu-22.04`)
 
+---
+
+## 18. Unified Brand Identity & Multi-Platform SVG Icon Pipeline
+* **Context**:
+  - The project previously used generic temporary icons and an emoji brand placeholder (`⚡`) in the desktop sidebar.
+  - A custom, modern brand SVG (`desktop/src-tauri/icons/icon.svg`) was added featuring dark blue rounded tile geometry, radial glow, and a sliced gradient play glyph.
+* **Decision**:
+  - Utilize `@tauri-apps/cli icon` to generate the complete suite of native platform icon artifacts from `icon.svg`:
+    - Windows multi-resolution icon (`icon.ico` supporting 16x16 through 256x256).
+    - macOS Apple Icon Image (`icon.icns` supporting 16x16 through 1024x1024).
+    - High-DPI raster icons (`32x32.png`, `64x64.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, Windows Store logos, iOS, Android).
+  - Mirror SVG and raster icons to `desktop/public/` (`icon.svg`, `icon.png`, `favicon.ico`, `favicon-32x32.png`) and configure `desktop/nuxt.config.ts` with SVG/ICO favicon links.
+  - Update `desktop/app.vue` sidebar branding to render the high-resolution vector icon (`/icon.svg`) directly.
+  - Showcase the official vector emblem in `README.md`.
+
+
 
 

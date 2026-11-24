@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="desktop/src-tauri/icons/icon.svg" width="96" height="96" alt="FFmpeg Video Toolkit Pro Logo" />
+</p>
+
 # FFmpeg Video Toolkit Pro
 
 [![CI](https://github.com/agensi/ffmpeg-video-toolkit-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/agensi/ffmpeg-video-toolkit-pro/actions)

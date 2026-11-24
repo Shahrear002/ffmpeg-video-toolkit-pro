@@ -3,7 +3,9 @@
     <!-- Left Navigation Sidebar -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-icon">⚡</div>
+        <div class="brand-icon">
+          <img src="/icon.svg" alt="FFmpeg Video Toolkit Pro" class="brand-logo-img" />
+        </div>
         <div class="brand-text">
           <h2>FFmpeg Toolkit</h2>
           <span class="badge-pro">PRO v1.0</span>
@@ -943,7 +945,19 @@ body {
 }
 
 .brand-icon {
-  font-size: 24px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand-logo-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 7px;
 }
 
 .brand-text h2 {
