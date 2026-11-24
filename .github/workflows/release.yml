@@ -121,14 +121,14 @@ jobs:
           }
 
       - name: Stage Pinned FFmpeg & FFprobe Binaries
-        shell: pwsh
+        shell: bash
         run: |
           python scripts/fetch_ffmpeg.py --target ${{ matrix.target }}
 
       - name: Build Engine Sidecar Binary
-        shell: pwsh
+        shell: bash
         run: |
-          pip install pyinstaller
+          python -m pip install --upgrade pyinstaller
           python scripts/build_engine_sidecar.py --target ${{ matrix.target }}
 
       - name: Install Frontend Dependencies & Build Static SPA

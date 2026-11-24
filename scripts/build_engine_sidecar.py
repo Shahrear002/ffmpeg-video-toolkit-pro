@@ -41,10 +41,10 @@ def build_sidecar(target_triple: str, out_dir: Path, repo_root: Path) -> Path:
     build_temp = repo_root / "build" / f"pyinstaller_{target_triple}"
     build_temp.mkdir(parents=True, exist_ok=True)
 
-    pyinstaller_bin = shutil.which("pyinstaller") or "pyinstaller"
-
     cmd = [
-        pyinstaller_bin,
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--onefile",
         "--noconfirm",
         "--clean",
@@ -61,7 +61,9 @@ def build_sidecar(target_triple: str, out_dir: Path, repo_root: Path) -> Path:
     if res.returncode != 0 and target_triple == "universal-apple-darwin":
         print("[SIDECAR] Retrying PyInstaller without --target-arch universal2...", file=sys.stderr)
         fallback_cmd = [
-            pyinstaller_bin,
+            sys.executable,
+            "-m",
+            "PyInstaller",
             "--onefile",
             "--noconfirm",
             "--clean",
