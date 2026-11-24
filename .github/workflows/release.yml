@@ -171,6 +171,8 @@ jobs:
     name: Generate Release Checksums & Finalize
     needs: [build-skill-package, build-desktop-binaries]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -190,6 +192,8 @@ jobs:
       - name: Upload Checksums to GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.RELEASE_VERSION }}
           files: |
