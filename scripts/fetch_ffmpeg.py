@@ -47,6 +47,14 @@ FFMPEG_PINNED_BUILDS = {
         "ffprobe_bin_rel": "ffprobe",
         "ext": "",
     },
+    "universal-apple-darwin": {
+        "version": "7.1",
+        "url": "https://evermeet.cx/ffmpeg/ffmpeg-7.1.zip",
+        "sha256": None,
+        "ffmpeg_bin_rel": "ffmpeg",
+        "ffprobe_bin_rel": "ffprobe",
+        "ext": "",
+    },
     "x86_64-unknown-linux-gnu": {
         "version": "7.1",
         "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
@@ -91,6 +99,16 @@ def stage_local_binaries(target_dir: Path, target_triple: str) -> bool:
         dest_ffmpeg.chmod(0o755)
         dest_ffprobe.chmod(0o755)
 
+    if target_triple == "universal-apple-darwin":
+        for arch in ["aarch64-apple-darwin", "x86_64-apple-darwin"]:
+            arch_ffmpeg = target_dir / f"ffmpeg-{arch}{ext}"
+            arch_ffprobe = target_dir / f"ffprobe-{arch}{ext}"
+            shutil.copy2(dest_ffmpeg, arch_ffmpeg)
+            shutil.copy2(dest_ffprobe, arch_ffprobe)
+            if not ext:
+                arch_ffmpeg.chmod(0o755)
+                arch_ffprobe.chmod(0o755)
+
     print(f"[FETCH] Staged host FFmpeg:  {dest_ffmpeg}", file=sys.stderr)
     print(f"[FETCH] Staged host FFprobe: {dest_ffprobe}", file=sys.stderr)
     return True
@@ -103,7 +121,7 @@ def fetch_target_binaries(target_triple: str, target_dir: Path) -> None:
         raise ValueError(f"Unknown target triple: {target_triple}")
 
     host_triple = get_host_target_triple()
-    if target_triple == host_triple:
+    if target_triple == host_triple or (target_triple == "universal-apple-darwin" and sys.platform == "darwin"):
         if stage_local_binaries(target_dir, target_triple):
             return
 
@@ -144,6 +162,16 @@ def fetch_target_binaries(target_triple: str, target_dir: Path) -> None:
         if not ext:
             dest_ffmpeg.chmod(0o755)
             dest_ffprobe.chmod(0o755)
+
+        if target_triple == "universal-apple-darwin":
+            for arch in ["aarch64-apple-darwin", "x86_64-apple-darwin"]:
+                arch_ffmpeg = target_dir / f"ffmpeg-{arch}{ext}"
+                arch_ffprobe = target_dir / f"ffprobe-{arch}{ext}"
+                shutil.copy2(dest_ffmpeg, arch_ffmpeg)
+                shutil.copy2(dest_ffprobe, arch_ffprobe)
+                if not ext:
+                    arch_ffmpeg.chmod(0o755)
+                    arch_ffprobe.chmod(0o755)
 
         print(f"[FETCH COMPLETE] Staged {dest_ffmpeg.name} and {dest_ffprobe.name}", file=sys.stderr)
     finally:

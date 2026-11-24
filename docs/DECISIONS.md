@@ -171,8 +171,7 @@ This document records the architectural and design decisions made for **FFmpeg V
   - Conditionally export Apple code signing environment variables only when `secrets.APPLE_CERTIFICATE` is non-empty. When unconfigured, `tauri-action` builds clean, unsigned native DMG packages without keychain import errors.
   - Expand the release matrix to build native installers for all major desktop architectures:
     - `windows-x64` (`x86_64-pc-windows-msvc` on `windows-latest`)
-    - `macos-arm64` (`aarch64-apple-darwin` on `macos-latest` for Apple Silicon M1/M2/M3/M4)
-    - `macos-intel` (`x86_64-apple-darwin` on `macos-13` for Intel Macs)
+    - `macos-universal` (`universal-apple-darwin` on `macos-latest` producing a single Universal DMG that natively supports both Apple Silicon M1/M2/M3/M4 and Intel Macs)
     - `linux-x64` (`x86_64-unknown-linux-gnu` on `ubuntu-22.04`)
 
 

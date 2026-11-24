@@ -60,12 +60,9 @@ jobs:
           - platform: 'windows-x64'
             os: windows-latest
             target: x86_64-pc-windows-msvc
-          - platform: 'macos-arm64'
+          - platform: 'macos-universal'
             os: macos-latest
-            target: aarch64-apple-darwin
-          - platform: 'macos-intel'
-            os: macos-13
-            target: x86_64-apple-darwin
+            target: universal-apple-darwin
           - platform: 'linux-x64'
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -87,7 +84,7 @@ jobs:
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -165,7 +162,7 @@ jobs:
           projectPath: desktop
           tagName: ${{ env.RELEASE_VERSION }}
           releaseName: "FFmpeg Video Toolkit Pro ${{ env.RELEASE_VERSION }}"
-          releaseBody: "Commercial release build for ${{ env.RELEASE_VERSION }}. Includes native standalone desktop installers for Windows (.exe / .msi), macOS Apple Silicon (.dmg), macOS Intel (.dmg), and Linux (.AppImage / .deb), plus the Agensi AI Agent Skill package."
+          releaseBody: "Commercial release build for ${{ env.RELEASE_VERSION }}. Includes native standalone desktop installers for Windows (.exe / .msi), macOS Universal Apple Silicon & Intel (.dmg), and Linux (.AppImage / .deb), plus the Agensi AI Agent Skill package."
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}

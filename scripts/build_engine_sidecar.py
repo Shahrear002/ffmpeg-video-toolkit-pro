@@ -52,10 +52,27 @@ def build_sidecar(target_triple: str, out_dir: Path, repo_root: Path) -> Path:
         "--distpath", str(out_dir),
         "--workpath", str(build_temp),
         "--specpath", str(build_temp),
-        str(engine_script),
     ]
+    if target_triple == "universal-apple-darwin" and sys.platform == "darwin":
+        cmd.extend(["--target-arch", "universal2"])
+    cmd.append(str(engine_script))
 
     res = subprocess.run(cmd, check=False)
+    if res.returncode != 0 and target_triple == "universal-apple-darwin":
+        print("[SIDECAR] Retrying PyInstaller without --target-arch universal2...", file=sys.stderr)
+        fallback_cmd = [
+            pyinstaller_bin,
+            "--onefile",
+            "--noconfirm",
+            "--clean",
+            "--name", binary_name,
+            "--distpath", str(out_dir),
+            "--workpath", str(build_temp),
+            "--specpath", str(build_temp),
+            str(engine_script),
+        ]
+        res = subprocess.run(fallback_cmd, check=False)
+
     if res.returncode != 0:
         raise RuntimeError(f"PyInstaller build failed with exit code {res.returncode}")
 
@@ -64,6 +81,14 @@ def build_sidecar(target_triple: str, out_dir: Path, repo_root: Path) -> Path:
 
     if not ext:
         expected_output.chmod(0o755)
+
+    if target_triple == "universal-apple-darwin":
+        for arch in ["aarch64-apple-darwin", "x86_64-apple-darwin"]:
+            arch_bin = out_dir / f"{binary_stem}-{arch}{ext}"
+            shutil.copy2(expected_output, arch_bin)
+            if not ext:
+                arch_bin.chmod(0o755)
+            print(f"[SIDECAR] Also staged slice: {arch_bin}", file=sys.stderr)
 
     print(f"[SIDECAR BUILD COMPLETE] Created {expected_output} ({expected_output.stat().st_size:,} bytes)", file=sys.stderr)
 
