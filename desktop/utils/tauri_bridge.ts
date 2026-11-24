@@ -28,29 +28,36 @@ export async function createSidecarRunner(): Promise<SidecarRunner> {
   const { Command } = await import('@tauri-apps/plugin-shell')
 
   return async (args, onData, onError) => {
-    // Spawn sidecar: video_toolkit binary
-    const command = Command.sidecar('binaries/video_toolkit', args)
-
+    let command: any
     let childProcess: any = null
 
-    command.on('close', (data) => {
-      // Process finished
-    })
+    const attach = (cmd: any) => {
+      cmd.on('error', (error: any) => {
+        onError(`Process error: ${error}\n`)
+      })
+      cmd.stdout.on('data', (line: string) => {
+        onData(line + '\n')
+      })
+      cmd.stderr.on('data', (line: string) => {
+        onError(line + '\n')
+      })
+    }
 
-    command.on('error', (error) => {
-      onError(`Process error: ${error}\n`)
-    })
-
-    command.stdout.on('data', (line) => {
-      onData(line + '\n')
-    })
-
-    command.stderr.on('data', (line) => {
-      onError(line + '\n')
-    })
-
-    const child = await command.spawn()
-    childProcess = child
+    try {
+      command = Command.sidecar('binaries/video_toolkit', args)
+      attach(command)
+      childProcess = await command.spawn()
+    } catch (e: any) {
+      // Fallback if environment resolves sidecar without binaries/ prefix
+      try {
+        command = Command.sidecar('video_toolkit', args)
+        attach(command)
+        childProcess = await command.spawn()
+      } catch (fallbackErr: any) {
+        onError(`Sidecar spawn error: ${e?.message || e}\n`)
+        return { code: 1 }
+      }
+    }
 
     const sidecarProcess: SidecarProcess = {
       kill: async () => {
@@ -61,7 +68,7 @@ export async function createSidecarRunner(): Promise<SidecarRunner> {
     }
 
     return new Promise((resolve) => {
-      command.on('close', (data) => {
+      command.on('close', (data: any) => {
         resolve({ code: data.code ?? 0, process: sidecarProcess })
       })
       command.on('error', () => {
@@ -83,10 +90,26 @@ export async function runSelfCheck(): Promise<{ success: boolean; output: string
   }
 
   const { Command } = await import('@tauri-apps/plugin-shell')
-  const command = Command.sidecar('binaries/video_toolkit', ['--check'])
-  const output = await command.execute()
-  return {
-    success: output.code === 0,
-    output: output.stdout || output.stderr
+  try {
+    const command = Command.sidecar('binaries/video_toolkit', ['--check'])
+    const output = await command.execute()
+    return {
+      success: output.code === 0,
+      output: output.stdout || output.stderr
+    }
+  } catch (err: any) {
+    try {
+      const fallback = Command.sidecar('video_toolkit', ['--check'])
+      const output = await fallback.execute()
+      return {
+        success: output.code === 0,
+        output: output.stdout || output.stderr
+      }
+    } catch (fallbackErr: any) {
+      return {
+        success: false,
+        output: `Sidecar error: ${err?.message || err}`
+      }
+    }
   }
 }

@@ -189,6 +189,23 @@ This document records the architectural and design decisions made for **FFmpeg V
   - Update `desktop/app.vue` sidebar branding to render the high-resolution vector icon (`/icon.svg`) directly.
   - Showcase the official vector emblem in `README.md`.
 
+---
+
+## 19. Tauri v2 Sidecar Capability Scoping & Themed Custom Scrollbars
+* **Context**:
+  - In Tauri v2, calling `Command.sidecar('binaries/video_toolkit', args)` aborted at runtime with `Scoped command binaries/video_toolkit not found` because `desktop/src-tauri/capabilities/default.json` used unscoped bare permission identifiers (`shell:allow-execute`, `shell:allow-spawn`), which block command execution by default.
+  - Furthermore, default OS scrollbars on Windows rendered with bright white tracks and wide gray rectangular thumbs, conflicting with the dark cyberpunk UI design of the application.
+* **Decision**:
+  - In `desktop/src-tauri/capabilities/default.json`, explicitly define the execution and spawn capability scopes for both `binaries/video_toolkit` and `video_toolkit` (along with `binaries/ffmpeg` and `binaries/ffprobe`) with `"sidecar": true` and `"args": true`.
+  - In `desktop/utils/tauri_bridge.ts`, implement an automatic fallback between `binaries/video_toolkit` and `video_toolkit` for both `spawn` and `execute` invocations.
+  - In `desktop/app.vue`, establish a cohesive, cross-platform scrollbar system:
+    - Width/height constrained to a sleek 6px.
+    - Fully transparent track to seamlessly blend into surrounding surfaces (`--scrollbar-track`).
+    - Pill-shaped rounded thumb (`border-radius: 9999px`) colored with `--scrollbar-thumb` (`#334155` dark, `#cbd5e1` light), transitioning to the brand accent color (`#38bdf8` dark, `#0284c7` light) on hover.
+    - Configured standard CSS `scrollbar-width: thin` and `scrollbar-color` properties.
+    - Added `scrollbar-gutter: stable` and `overflow-x: hidden` to `.sidebar` to eliminate layout shifting.
+
+
 
 
 

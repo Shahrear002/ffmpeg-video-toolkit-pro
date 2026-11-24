@@ -2,11 +2,59 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
   "identifier": "default",
   "description": "Default capabilities scoped strictly to sidecars, dialogs, and local file access",
-  "windows": ["main"],
+  "windows": ["main", "*"],
   "permissions": [
     "core:default",
-    "shell:allow-execute",
-    "shell:allow-spawn",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/video_toolkit",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "video_toolkit",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "binaries/ffmpeg",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "binaries/ffprobe",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/video_toolkit",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "video_toolkit",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "binaries/ffmpeg",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "binaries/ffprobe",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-read-file",
