@@ -8,7 +8,7 @@
         </div>
         <div class="brand-text">
           <h2>FFmpeg Toolkit</h2>
-          <span class="badge-pro">PRO v1.0</span>
+          <span class="badge-pro">PRO v{{ appVersion }}</span>
         </div>
       </div>
 
@@ -109,6 +109,7 @@
               </div>
               <div v-else class="dropzone-file">
                 <span class="file-name">{{ formState.input }}</span>
+                <span v-if="inputFileSizeStr" class="file-size-badge">📦 Original: {{ inputFileSizeStr }}</span>
                 <span class="file-action">Click to change</span>
               </div>
             </div>
@@ -139,20 +140,33 @@
               <div v-if="currentTab === 'compress'" class="options-group">
                 <h4>Compression Options</h4>
                 <div class="input-group">
-                  <label>Preset Target</label>
+                  <label>Compression Target</label>
                   <select v-model="formState.preset" @change="onPresetChange">
-                    <option value="">Custom Target MB</option>
-                    <option value="discord">Discord Free (20 MB)</option>
-                    <option value="whatsapp">WhatsApp Media (16 MB)</option>
-                    <option value="github">GitHub Web Upload (25 MB)</option>
-                    <option value="x">X / Twitter (512 MB)</option>
-                    <option value="gmail">Gmail Attachment (20 MB)</option>
+                    <optgroup label="Auto Size Reduction">
+                      <option value="auto">Auto Balanced (50% Size Reduction)</option>
+                      <option value="max_comp">Maximum Compression (75% Size Reduction)</option>
+                      <option value="light_comp">Light Compression (25% Size Reduction)</option>
+                    </optgroup>
+                    <optgroup label="Custom Budget">
+                      <option value="custom">Custom Target Size (MB)</option>
+                    </optgroup>
+                    <optgroup label="Platform Upload Limits (Ceiling)">
+                      <option value="discord">Discord Free (Max 20 MB)</option>
+                      <option value="whatsapp">WhatsApp Media (Max 16 MB)</option>
+                      <option value="github">GitHub Web Upload (Max 25 MB)</option>
+                      <option value="gmail">Gmail Attachment (Max 20 MB)</option>
+                      <option value="x">X / Twitter (Max 512 MB)</option>
+                    </optgroup>
                   </select>
                 </div>
 
-                <div v-if="!formState.preset" class="input-group">
+                <div v-if="formState.preset === 'custom'" class="input-group">
                   <label>Target Size (MB)</label>
-                  <input v-model.number="formState.targetMb" type="number" min="1" max="10000" />
+                  <input v-model.number="formState.targetMb" type="number" min="0.1" step="0.5" max="10000" />
+                </div>
+
+                <div v-if="compressionTargetHint" class="compress-hint-box">
+                  💡 {{ compressionTargetHint }}
                 </div>
 
                 <div class="input-group">
@@ -576,9 +590,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, watch, onMounted } from 'vue'
 import type { Subcommand, AppSettings, LicenseStatus } from './types/toolkit'
-import { buildCommandArgs, formatCommandPreview, type ToolFormState } from './utils/command_builder'
+import { buildCommandArgs, formatCommandPreview, getDefaultOutputPath, type ToolFormState } from './utils/command_builder'
 import { QueueManager } from './stores/queue'
 import { createSidecarRunner, runSelfCheck, isTauriEnvironment } from './utils/tauri_bridge'
 
@@ -598,6 +612,7 @@ const tools = [
 ]
 
 const currentTab = ref<string>('compress')
+const appVersion = ref<string>('1.0.0')
 const theme = ref<'dark' | 'light'>('dark')
 const openSelfCheckModal = ref<boolean>(false)
 const checkingEngine = ref<boolean>(false)
@@ -627,8 +642,8 @@ const formState = reactive<ToolFormState>({
   overwrite: false,
   quiet: false,
   verbose: false,
-  preset: 'discord',
-  targetMb: 20,
+  preset: 'auto',
+  targetMb: 10,
   scale: '',
   audioBitrate: '128k',
   noiseDb: -30,
@@ -656,6 +671,67 @@ const formState = reactive<ToolFormState>({
   cols: 4,
   rows: 4,
   timestamps: '1.0, 5.0'
+})
+
+const inputFileBytes = ref<number | null>(null)
+
+const inputFileSizeStr = computed(() => {
+  if (!inputFileBytes.value) return null
+  const mb = inputFileBytes.value / (1024 * 1024)
+  if (mb < 1) {
+    return `${(inputFileBytes.value / 1024).toFixed(1)} KB`
+  }
+  return `${mb.toFixed(2)} MB`
+})
+
+const compressionTargetHint = computed(() => {
+  if (currentTab.value !== 'compress') return null
+  if (!inputFileBytes.value) {
+    if (formState.preset === 'auto') return 'Auto: Reduces file size by ~50% with balanced quality.'
+    if (formState.preset === 'max_comp') return 'Maximum: Reduces file size by ~75% for highest space savings.'
+    if (formState.preset === 'light_comp') return 'Light: Reduces file size by ~25% for minimal compression artifacts.'
+    if (formState.preset && formState.preset !== 'custom') return `Platform limit: Targets platform ceiling for ${formState.preset.toUpperCase()}.`
+    if (formState.targetMb) return `Target size: ${formState.targetMb} MB.`
+    return null
+  }
+
+  const origMb = inputFileBytes.value / (1024 * 1024)
+  if (formState.preset === 'auto') {
+    const estMb = origMb * 0.50
+    return `Targeting ~${estMb.toFixed(2)} MB (50% reduction from ${origMb.toFixed(2)} MB)`
+  }
+  if (formState.preset === 'max_comp') {
+    const estMb = origMb * 0.25
+    return `Targeting ~${estMb.toFixed(2)} MB (75% reduction from ${origMb.toFixed(2)} MB)`
+  }
+  if (formState.preset === 'light_comp') {
+    const estMb = origMb * 0.75
+    return `Targeting ~${estMb.toFixed(2)} MB (25% reduction from ${origMb.toFixed(2)} MB)`
+  }
+  if (formState.preset && formState.preset !== 'custom') {
+    const limitsMap: Record<string, number> = {
+      discord: 20,
+      whatsapp: 16,
+      github: 25,
+      x: 512,
+      gmail: 20
+    }
+    const maxMb = limitsMap[formState.preset] || 20
+    if (origMb <= maxMb) {
+      const estMb = origMb * 0.50
+      return `Input (${origMb.toFixed(2)} MB) is under ${formState.preset.toUpperCase()} ceiling (${maxMb} MB) → auto-compressing to ~${estMb.toFixed(2)} MB`
+    } else {
+      return `Targeting platform ceiling of ${maxMb} MB (${((1 - maxMb / origMb) * 100).toFixed(0)}% reduction)`
+    }
+  }
+  if (formState.targetMb) {
+    if (formState.targetMb >= origMb) {
+      const estMb = origMb * 0.70
+      return `Target (${formState.targetMb} MB) ≥ source (${origMb.toFixed(2)} MB) → auto-capping to ~${estMb.toFixed(2)} MB`
+    }
+    return `Targeting ${formState.targetMb} MB (${((1 - formState.targetMb / origMb) * 100).toFixed(0)}% reduction)`
+  }
+  return null
 })
 
 const isToolTab = computed(() => tools.some((t) => t.id === currentTab.value))
@@ -693,27 +769,75 @@ const logOutput = computed(() => {
   return allLogs.join('\n') || 'No logs recorded yet.'
 })
 
+async function updateInputFileInfo(filePath: string) {
+  if (!filePath) {
+    inputFileBytes.value = null
+    return
+  }
+  if (!isTauriEnvironment()) {
+    inputFileBytes.value = 3.57 * 1024 * 1024
+    return
+  }
+  try {
+    const { stat } = await import('@tauri-apps/plugin-fs')
+    const fileStat = await stat(filePath)
+    inputFileBytes.value = fileStat.size
+  } catch (e) {
+    console.warn('Could not read file size', e)
+    inputFileBytes.value = null
+  }
+}
+
 function onPresetChange() {
   if (formState.preset === 'discord') formState.targetMb = 20
   else if (formState.preset === 'whatsapp') formState.targetMb = 16
   else if (formState.preset === 'github') formState.targetMb = 25
   else if (formState.preset === 'x') formState.targetMb = 512
   else if (formState.preset === 'gmail') formState.targetMb = 20
+  else if (formState.preset === 'custom') {
+    if (inputFileBytes.value) {
+      formState.targetMb = Math.max(1, Math.round((inputFileBytes.value / (1024 * 1024)) * 0.5))
+    } else {
+      formState.targetMb = 10
+    }
+  }
 }
 
 async function pickInputFile() {
   if (!isTauriEnvironment()) {
     formState.input = 'test_video.mp4'
+    if (isToolTab.value) {
+      formState.output = getDefaultOutputPath(formState.input, currentTab.value as Subcommand, settings.outputDirectory)
+    }
     return
   }
   try {
     const { open } = await import('@tauri-apps/plugin-dialog')
+    let filters: Array<{ name: string; extensions: string[] }> = []
+
+    if (currentTab.value === 'extract-audio' || currentTab.value === 'trim-silence') {
+      filters = [
+        { name: 'Media Files', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'flv', 'wmv', 'ts', 'm4v', 'mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    } else {
+      filters = [
+        { name: 'Video Files', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'flv', 'wmv', 'ts', 'm4v'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    }
+
     const selected = await open({
       multiple: false,
-      directory: formState.recursive
+      directory: formState.recursive,
+      filters: formState.recursive ? undefined : filters
     })
     if (selected && typeof selected === 'string') {
       formState.input = selected
+      await updateInputFileInfo(selected)
+      if (isToolTab.value) {
+        formState.output = getDefaultOutputPath(selected, currentTab.value as Subcommand, settings.outputDirectory)
+      }
     }
   } catch (e) {
     console.error('File dialog error', e)
@@ -846,15 +970,46 @@ function onDragOver(e: DragEvent) {
 
 function onDragLeave(e: DragEvent) {}
 
-function onDrop(e: DragEvent) {
+async function onDrop(e: DragEvent) {
   if (e.dataTransfer && e.dataTransfer.files.length > 0) {
     const file = e.dataTransfer.files[0]
     // In Tauri, webkitRelativePath or path is exposed
-    formState.input = (file as any).path || file.name
+    const filePath = (file as any).path || file.name
+    formState.input = filePath
+    await updateInputFileInfo(filePath)
+    if (isToolTab.value) {
+      formState.output = getDefaultOutputPath(filePath, currentTab.value as Subcommand, settings.outputDirectory)
+    }
   }
 }
 
+watch(() => formState.input, async (newVal) => {
+  if (newVal) {
+    await updateInputFileInfo(newVal)
+  } else {
+    inputFileBytes.value = null
+  }
+})
+
+watch(currentTab, (newTab) => {
+  if (isToolTab.value && formState.input) {
+    formState.output = getDefaultOutputPath(formState.input, newTab as Subcommand, settings.outputDirectory)
+  }
+})
+
 onMounted(async () => {
+  if (isTauriEnvironment()) {
+    try {
+      const { getVersion } = await import('@tauri-apps/api/app')
+      const ver = await getVersion()
+      if (ver) {
+        appVersion.value = ver
+      }
+    } catch (e) {
+      console.warn('Could not read version from Tauri runtime', e)
+    }
+  }
+
   const runner = await createSidecarRunner()
   queueManager.setRunner(runner)
   // Run initial self check silently
@@ -874,6 +1029,7 @@ onMounted(async () => {
 <style>
 /* CSS Variables for Clean Dark & Light Themes */
 :root {
+  color-scheme: dark;
   --bg-primary: #0f172a;
   --bg-secondary: #1e293b;
   --bg-tertiary: #334155;
@@ -886,12 +1042,13 @@ onMounted(async () => {
   --success: #22c55e;
   --danger: #ef4444;
   --warning: #f59e0b;
-  --scrollbar-track: transparent;
+  --scrollbar-track: rgba(15, 23, 42, 0.6);
   --scrollbar-thumb: #334155;
   --scrollbar-thumb-hover: #38bdf8;
 }
 
 .light {
+  color-scheme: light;
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
   --bg-tertiary: #e2e8f0;
@@ -904,44 +1061,48 @@ onMounted(async () => {
   --success: #16a34a;
   --danger: #dc2626;
   --warning: #d97706;
-  --scrollbar-track: transparent;
+  --scrollbar-track: rgba(241, 245, 249, 0.8);
   --scrollbar-thumb: #cbd5e1;
   --scrollbar-thumb-hover: #0284c7;
 }
 
-* {
+html, body, * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 /* Custom Sleek Scrollbars matching UI theme */
-::-webkit-scrollbar {
+::-webkit-scrollbar,
+*::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
   background: var(--scrollbar-track);
 }
 
-::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border-radius: 9999px;
   transition: background 0.15s ease-in-out;
 }
 
-::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
 }
 
-::-webkit-scrollbar-corner {
+::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-::-webkit-scrollbar-button {
+::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
@@ -972,7 +1133,6 @@ body {
   padding: 16px 12px;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
 }
 
 .brand {
@@ -1191,6 +1351,29 @@ body {
 .dropzone-file {
   font-size: 13px;
   font-weight: 600;
+}
+
+.file-size-badge {
+  display: inline-block;
+  margin-top: 6px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.compress-hint-box {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background-color: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--accent);
+  line-height: 1.4;
 }
 
 .file-action {

@@ -48,6 +48,7 @@ export interface Job {
   pass?: number
   outputBytes?: number
   errorMessage?: string
+  lastStderr?: string
   logs: string[]
   createdAt: number
   startedAt?: number

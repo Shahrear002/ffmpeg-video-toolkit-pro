@@ -16,7 +16,7 @@ import subprocess
 import sys
 import zipfile
 
-SKILL_VERSION = "1.0.0"
+SKILL_VERSION = "0.0.5"
 
 
 def generate_platform_limits_markdown(json_path: Path, md_path: Path) -> None:

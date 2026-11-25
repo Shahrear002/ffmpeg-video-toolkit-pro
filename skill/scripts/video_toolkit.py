@@ -658,43 +658,78 @@ def handle_check(runner: FFmpegRunner, as_json: bool = False) -> int:
 
 def handle_compress(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input file not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_compressed.mp4"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}. Use --overwrite to replace."})
         return ExitCode.VERIFICATION_ERROR
 
+    input_size = input_path.stat().st_size
     limits = load_platform_limits()
     target_bytes: Optional[int] = None
+    allow_upscale = getattr(args, "allow_upscale_size", False)
 
-    if args.preset:
+    if getattr(args, "percent", None) is not None:
+        pct = float(args.percent)
+        if pct > 1.0:
+            pct = pct / 100.0
+        pct = max(0.01, min(pct, 1.0))
+        target_bytes = max(80_000, int(input_size * pct))
+        runner.logger.emit_event("info", {
+            "message": f"Targeting {pct*100:.0f}% of input size: {target_bytes / 1024 / 1024:.2f} MB (source was {input_size / 1024 / 1024:.2f} MB)"
+        })
+    elif args.preset:
         preset_key = args.preset.lower().strip()
         if preset_key not in limits:
             runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Unknown preset '{args.preset}'. Available presets: {list(limits.keys())}"})
             return ExitCode.ARGUMENT_ERROR
-        target_bytes = limits[preset_key]["target_bytes"]
+        preset_max = limits[preset_key]["target_bytes"]
+        if input_size <= preset_max and not allow_upscale:
+            # Input file is ALREADY within the platform preset limit.
+            # Avoid inflating file size: auto-compress to 50% of original.
+            target_bytes = max(80_000, int(input_size * 0.50))
+            runner.logger.emit_event("warning", {
+                "message": f"Input ({input_size / 1024 / 1024:.2f} MB) is already below preset '{args.preset}' limit ({preset_max / 1024 / 1024:.2f} MB). Auto-compressing to 50% ({target_bytes / 1024 / 1024:.2f} MB)."
+            })
+        else:
+            target_bytes = preset_max
     elif args.target_size_mb:
-        target_bytes = int(args.target_size_mb * 1024 * 1024)
+        requested_bytes = int(args.target_size_mb * 1024 * 1024)
+        if requested_bytes >= input_size and not allow_upscale:
+            target_bytes = max(80_000, int(input_size * 0.70))
+            runner.logger.emit_event("warning", {
+                "message": f"Requested target ({args.target_size_mb:.2f} MB) is >= source size ({input_size / 1024 / 1024:.2f} MB). Auto-capping target to 70% ({target_bytes / 1024 / 1024:.2f} MB) to ensure compression."
+            })
+        else:
+            target_bytes = requested_bytes
     elif args.target_size_bytes:
-        target_bytes = int(args.target_size_bytes)
+        requested_bytes = int(args.target_size_bytes)
+        if requested_bytes >= input_size and not allow_upscale:
+            target_bytes = max(80_000, int(input_size * 0.70))
+            runner.logger.emit_event("warning", {
+                "message": f"Requested target bytes ({requested_bytes:,}) >= source size ({input_size:,}). Auto-capping target to 70% ({target_bytes:,} bytes)."
+            })
+        else:
+            target_bytes = requested_bytes
     else:
-        target_bytes = limits.get("discord", {}).get("target_bytes", 20971520)
+        # Default when nothing specified: 50% size reduction
+        target_bytes = max(80_000, int(input_size * 0.50))
 
     # Probe media
     probe_data = runner.run_probe(input_path)
     fmt = probe_data.get("format", {})
     duration_s = float(fmt.get("duration", 0.0))
     if duration_s <= 0:
-        runner.logger.emit_event("error", {"code": ExitCode.STREAM_ERROR, "message": "Could not determine media duration."})
+        runner.logger.emit_event("error", {"code": ExitCode.STREAM_ERROR, "message": f"Could not determine media duration for '{input_path.name}'. Is this a valid video file?"})
         return ExitCode.STREAM_ERROR
 
     v_stream = next((s for s in probe_data.get("streams", []) if s.get("codec_type") == "video"), None)
     if not v_stream:
-        runner.logger.emit_event("error", {"code": ExitCode.STREAM_ERROR, "message": "No video stream found in input."})
+        runner.logger.emit_event("error", {"code": ExitCode.STREAM_ERROR, "message": f"No video stream found in '{input_path.name}'. Please select a valid video file (.mp4, .mov, .mkv, etc.)."})
         return ExitCode.STREAM_ERROR
 
     width = int(v_stream.get("width", 1920))
@@ -729,19 +764,72 @@ def handle_compress(runner: FFmpegRunner, args: argparse.Namespace) -> int:
         else:
             scale_filter = f"scale={args.scale}"
 
+    req_audio_bitrate = args.audio_bitrate * 1000 if args.audio_bitrate else 128_000
+
     try:
         v_bitrate, a_bitrate = calculate_two_pass_bitrate(
             target_bytes=target_bytes,
             duration_s=duration_s,
-            audio_bitrate_bps=args.audio_bitrate * 1000 if args.audio_bitrate else 128_000,
+            audio_bitrate_bps=req_audio_bitrate,
             safety_margin=0.05,
             width=width,
             height=height,
             fps=fps,
         )
     except ValueError as e:
-        runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": str(e)})
-        return ExitCode.VERIFICATION_ERROR
+        # If user did not explicitly specify a scale and bppf was too low, try downscaling automatically
+        if not args.scale and "downscale using --scale" in str(e):
+            recovered = False
+            for candidate in ["720p", "480p", "360p"]:
+                cand_h = 720 if candidate == "720p" else (480 if candidate == "480p" else 360)
+                if cand_h < height:
+                    cand_w = int(cand_h * (width / height))
+                    cand_w = cand_w - (cand_w % 2)
+                    try:
+                        v_bitrate, a_bitrate = calculate_two_pass_bitrate(
+                            target_bytes=target_bytes,
+                            duration_s=duration_s,
+                            audio_bitrate_bps=req_audio_bitrate,
+                            safety_margin=0.05,
+                            width=cand_w,
+                            height=cand_h,
+                            fps=fps,
+                        )
+                        scale_filter = f"scale=-2:{cand_h}"
+                        width = cand_w
+                        height = cand_h
+                        runner.logger.emit_event("info", {
+                            "message": f"Auto-downscaling to {cand_h}p to preserve visual quality at target size."
+                        })
+                        recovered = True
+                        break
+                    except ValueError:
+                        continue
+            if not recovered:
+                runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": str(e)})
+                return ExitCode.VERIFICATION_ERROR
+        else:
+            runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": str(e)})
+            return ExitCode.VERIFICATION_ERROR
+
+    # Bitrate ceiling guardrail:
+    # A compressor should NEVER encode at a bitrate higher than the original source video.
+    orig_bitrate = 0
+    if fmt.get("bit_rate"):
+        try:
+            orig_bitrate = int(fmt["bit_rate"])
+        except ValueError:
+            pass
+    if orig_bitrate <= 0 and duration_s > 0:
+        orig_bitrate = int((input_size * 8) / duration_s)
+
+    if orig_bitrate > 64_000 and not allow_upscale:
+        orig_v_bitrate_est = max(32_000, orig_bitrate - a_bitrate)
+        if v_bitrate > int(orig_v_bitrate_est * 0.85):
+            v_bitrate = max(48_000, int(orig_v_bitrate_est * 0.85))
+            runner.logger.emit_event("info", {
+                "message": f"Capped video bitrate to 85% of source ({v_bitrate // 1000} kbps) to prevent file inflation."
+            })
 
     runner.logger.emit_event("start", {
         "command": "compress",
@@ -821,11 +909,11 @@ def handle_compress(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_trim_silence(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_trimmed{input_path.suffix}"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}"})
@@ -945,11 +1033,11 @@ def handle_trim_silence(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_shorts(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_shorts.mp4"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}"})
@@ -1099,11 +1187,12 @@ def handle_convert(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_extract_audio(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    ext = f".{args.format}" if args.format else ".mp3"
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}{ext}"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}"})
@@ -1154,11 +1243,11 @@ def handle_extract_audio(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_cut(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_cut{input_path.suffix}"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}"})
@@ -1311,11 +1400,12 @@ def handle_merge(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_gif(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    fmt = (args.format or ("webp" if args.output and args.output.lower().endswith(".webp") else "gif")).lower()
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_anim.{fmt}"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}"})
@@ -1405,11 +1495,11 @@ def handle_gif(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_speed(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_speed{input_path.suffix}"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}"})
@@ -1462,11 +1552,11 @@ def handle_speed(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_strip_meta(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_clean{input_path.suffix}"
 
     if output_path.exists() and not runner.overwrite:
         runner.logger.emit_event("error", {"code": ExitCode.VERIFICATION_ERROR, "message": f"Output file already exists: {output_path}"})
@@ -1515,11 +1605,11 @@ def handle_strip_meta(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 
 def handle_thumbs(runner: FFmpegRunner, args: argparse.Namespace) -> int:
     input_path = Path(args.input).resolve()
-    output_path = Path(args.output).resolve()
-
     if not input_path.is_file():
         runner.logger.emit_event("error", {"code": ExitCode.ARGUMENT_ERROR, "message": f"Input not found: {input_path}"})
         return ExitCode.ARGUMENT_ERROR
+
+    output_path = Path(args.output).resolve() if args.output else input_path.parent / f"{input_path.stem}_thumb.jpg"
 
     probe_data = runner.run_probe(input_path)
     duration_s = float(probe_data.get("format", {}).get("duration", 0.0))
@@ -1585,6 +1675,11 @@ def handle_thumbs(runner: FFmpegRunner, args: argparse.Namespace) -> int:
 # CLI Parser Setup & Main Entrypoint
 # ============================================================================
 
+def parse_kbps(val: Any) -> int:
+    s = str(val).lower().replace("kbps", "").replace("k", "").strip()
+    return int(s)
+
+
 def build_parser() -> argparse.ArgumentParser:
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--check", action="store_true", help="Inspect FFmpeg/FFprobe availability and capabilities")
@@ -1607,17 +1702,19 @@ def build_parser() -> argparse.ArgumentParser:
     # compress
     p_comp = subparsers.add_parser("compress", parents=[common_parser], help="Compress video to target byte size or platform preset using 2-pass libx264")
     p_comp.add_argument("input", help="Path to source video file")
-    p_comp.add_argument("output", help="Path to output compressed video")
+    p_comp.add_argument("output", nargs="?", help="Path to output compressed video")
     p_comp.add_argument("--preset", help="Platform preset (discord, whatsapp, github, slack, etc.)")
-    p_comp.add_argument("--target-size-mb", type=float, help="Target file size in megabytes")
+    p_comp.add_argument("--percent", "--target-percent", type=float, help="Target compression percentage of original size (e.g. 50 for 50%%)")
+    p_comp.add_argument("--target-size-mb", "--target-mb", dest="target_size_mb", type=float, help="Target file size in megabytes")
     p_comp.add_argument("--target-size-bytes", type=int, help="Target file size in raw bytes")
+    p_comp.add_argument("--allow-upscale-size", action="store_true", help="Allow compression target larger than input file size")
     p_comp.add_argument("--scale", help="Downscale resolution (e.g. 1080p, 720p, 480p, 360p, or W:H)")
-    p_comp.add_argument("--audio-bitrate", type=int, default=128, help="Audio bitrate in kbps (default 128)")
+    p_comp.add_argument("--audio-bitrate", type=parse_kbps, default=128, help="Audio bitrate in kbps (default 128)")
 
     # trim-silence
     p_trim = subparsers.add_parser("trim-silence", parents=[common_parser], help="Detect and remove silent segments from audio/video")
     p_trim.add_argument("input", help="Source file")
-    p_trim.add_argument("output", help="Output trimmed file")
+    p_trim.add_argument("output", nargs="?", help="Output trimmed file")
     p_trim.add_argument("--noise", default="-30dB", help="Silence audio threshold (default -30dB)")
     p_trim.add_argument("--min-silence", type=float, default=0.5, help="Minimum silence duration in seconds (default 0.5)")
     p_trim.add_argument("--pad", type=float, default=0.1, help="Audio buffer padding in seconds (default 0.1)")
@@ -1625,7 +1722,7 @@ def build_parser() -> argparse.ArgumentParser:
     # shorts
     p_shorts = subparsers.add_parser("shorts", parents=[common_parser], help="Reformat video to 9:16 vertical (1080x1920) for Shorts/TikTok/Reels")
     p_shorts.add_argument("input", help="Source file")
-    p_shorts.add_argument("output", help="Output vertical file")
+    p_shorts.add_argument("output", nargs="?", help="Output vertical file")
     p_shorts.add_argument("--mode", default="crop", choices=["crop", "blur"], help="Mode: center crop or blurred background fill")
     p_shorts.add_argument("--x-offset", type=int, default=0, help="Horizontal offset in pixels for crop mode")
 
@@ -1639,15 +1736,15 @@ def build_parser() -> argparse.ArgumentParser:
     # extract-audio
     p_aud = subparsers.add_parser("extract-audio", parents=[common_parser], help="Extract audio track to wav, flac, or mp3")
     p_aud.add_argument("input", help="Source video file")
-    p_aud.add_argument("output", help="Output audio file")
+    p_aud.add_argument("output", nargs="?", help="Output audio file")
     p_aud.add_argument("--format", choices=["wav", "flac", "mp3"], help="Audio container format")
-    p_aud.add_argument("--bitrate", help="MP3 bitrate (e.g. 192k, 320k)")
+    p_aud.add_argument("--bitrate", "--quality", dest="bitrate", help="MP3 bitrate (e.g. 192k, 320k)")
     p_aud.add_argument("--vbr-quality", type=int, choices=range(0, 10), help="MP3 VBR quality level (0=best, 9=worst)")
 
     # cut
     p_cut = subparsers.add_parser("cut", parents=[common_parser], help="Cut clip by start, end, or duration")
     p_cut.add_argument("input", help="Source file")
-    p_cut.add_argument("output", help="Output cut clip")
+    p_cut.add_argument("output", nargs="?", help="Output cut clip")
     p_cut.add_argument("--start", help="Start timestamp (HH:MM:SS or seconds)")
     p_cut.add_argument("--end", help="End timestamp (HH:MM:SS or seconds)")
     p_cut.add_argument("--duration", help="Clip duration in seconds")
@@ -1662,7 +1759,7 @@ def build_parser() -> argparse.ArgumentParser:
     # gif
     p_gif = subparsers.add_parser("gif", parents=[common_parser], help="Create high-quality GIF or animated WebP")
     p_gif.add_argument("input", help="Source video")
-    p_gif.add_argument("output", help="Output gif or webp file")
+    p_gif.add_argument("output", nargs="?", help="Output gif or webp file")
     p_gif.add_argument("--fps", type=int, default=12, help="Frame rate (default 12)")
     p_gif.add_argument("--width", type=int, default=480, help="Output width in pixels (default 480)")
     p_gif.add_argument("--max-seconds", type=float, help="Maximum duration to encode")
@@ -1672,18 +1769,18 @@ def build_parser() -> argparse.ArgumentParser:
     # speed
     p_speed = subparsers.add_parser("speed", parents=[common_parser], help="Adjust video and audio speed")
     p_speed.add_argument("input", help="Source file")
-    p_speed.add_argument("output", help="Output speed-adjusted file")
+    p_speed.add_argument("output", nargs="?", help="Output speed-adjusted file")
     p_speed.add_argument("--factor", type=float, required=True, help="Speed multiplier (e.g. 0.5, 1.5, 2.0, 4.0)")
 
     # strip-meta
     p_strip = subparsers.add_parser("strip-meta", parents=[common_parser], help="Remove all metadata, chapters, and location tags")
     p_strip.add_argument("input", help="Source file")
-    p_strip.add_argument("output", help="Output stripped file")
+    p_strip.add_argument("output", nargs="?", help="Output stripped file")
 
     # thumbs
     p_thumbs = subparsers.add_parser("thumbs", parents=[common_parser], help="Generate video thumbnails or a contact sheet")
     p_thumbs.add_argument("input", help="Source file")
-    p_thumbs.add_argument("output", help="Output image file or contact sheet")
+    p_thumbs.add_argument("output", nargs="?", help="Output image file or contact sheet")
     p_thumbs.add_argument("--timestamps", help="Comma-separated timestamps (e.g. 00:00:01,00:00:05)")
     p_thumbs.add_argument("--cols", type=int, help="Grid columns for contact sheet")
     p_thumbs.add_argument("--rows", type=int, help="Grid rows for contact sheet")
@@ -1698,17 +1795,45 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         raw_args = list(argv)
 
-    # Normalize options where the value starts with '-' (like --noise -30dB) so argparse does not confuse it for an option flag
+    subcommands = {
+        "compress", "trim-silence", "shorts", "convert", "extract-audio",
+        "cut", "gif", "speed", "strip-meta", "thumbs"
+    }
+
+    subcmd = None
+    for a in raw_args:
+        if a in subcommands or a in ("merge", "check"):
+            subcmd = a
+            break
+
+    # Normalize options:
+    # 1. Transform --noise -30dB -> --noise=-30dB
+    # 2. Extract -i/--input and -o/--output flags and map to positional arguments (for subcommands other than merge)
     normalized_argv: List[str] = []
     i = 0
+    extracted_input = None
+    extracted_output = None
+
     while i < len(raw_args):
         arg = raw_args[i]
         if arg in ("--noise",) and i + 1 < len(raw_args) and raw_args[i + 1].startswith("-") and not raw_args[i + 1].startswith("--"):
             normalized_argv.append(f"{arg}={raw_args[i + 1]}")
             i += 2
+        elif subcmd in subcommands and arg in ("-i", "--input") and i + 1 < len(raw_args):
+            extracted_input = raw_args[i + 1]
+            i += 2
+        elif subcmd in subcommands and arg in ("-o", "--output") and i + 1 < len(raw_args):
+            extracted_output = raw_args[i + 1]
+            i += 2
         else:
             normalized_argv.append(arg)
             i += 1
+
+    if subcmd in subcommands:
+        if extracted_input:
+            normalized_argv.append(extracted_input)
+        if extracted_output:
+            normalized_argv.append(extracted_output)
 
     parser = build_parser()
     args = parser.parse_args(normalized_argv)

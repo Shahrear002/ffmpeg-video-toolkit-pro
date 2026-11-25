@@ -61,21 +61,97 @@ export interface ToolFormState {
   rows?: number
 }
 
+export function getDefaultOutputPath(inputPath: string, subcommand: Subcommand, outDir?: string): string {
+  if (!inputPath) return ''
+  const normalized = inputPath.replace(/\\/g, '/')
+  const lastSlash = normalized.lastIndexOf('/')
+  const filename = lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized
+  const dir = outDir || (lastSlash >= 0 ? normalized.slice(0, lastSlash) : '')
+
+  const dotIndex = filename.lastIndexOf('.')
+  const baseName = dotIndex > 0 ? filename.slice(0, dotIndex) : filename
+  const origExt = dotIndex > 0 ? filename.slice(dotIndex) : '.mp4'
+
+  let targetExt = origExt
+  let suffix = '_processed'
+
+  switch (subcommand) {
+    case 'compress':
+      suffix = '_compressed'
+      targetExt = '.mp4'
+      break
+    case 'trim-silence':
+      suffix = '_trimmed'
+      break
+    case 'shorts':
+      suffix = '_shorts'
+      targetExt = '.mp4'
+      break
+    case 'convert':
+      suffix = '_converted'
+      targetExt = '.mp4'
+      break
+    case 'extract-audio':
+      suffix = '_audio'
+      targetExt = '.mp3'
+      break
+    case 'cut':
+      suffix = '_cut'
+      break
+    case 'merge':
+      suffix = '_merged'
+      targetExt = '.mp4'
+      break
+    case 'gif':
+      suffix = '_anim'
+      targetExt = '.gif'
+      break
+    case 'speed':
+      suffix = '_speed'
+      break
+    case 'strip-meta':
+      suffix = '_clean'
+      break
+    case 'thumbs':
+      suffix = '_thumb'
+      targetExt = '.jpg'
+      break
+  }
+
+  const outName = `${baseName}${suffix}${targetExt}`
+  return dir ? `${dir}/${outName}` : outName
+}
+
 export function buildCommandArgs(
   subcommand: Subcommand,
   state: ToolFormState,
   settings?: Partial<AppSettings>
 ): string[] {
   const args: string[] = [subcommand]
+  const effectiveOutput = state.output || (state.input ? getDefaultOutputPath(state.input, subcommand, settings?.outputDirectory) : '')
 
-  if (state.input) {
-    args.push('-i', state.input)
+  // Positional arguments handling per subcommand
+  if (subcommand === 'merge') {
+    if (state.mergeInputs && state.mergeInputs.length > 0) {
+      args.push(...state.mergeInputs)
+    } else if (state.input) {
+      args.push(state.input)
+    }
+    if (effectiveOutput) {
+      args.push('--output', effectiveOutput)
+    }
+  } else {
+    if (state.input) {
+      args.push(state.input)
+    }
+    if (effectiveOutput && subcommand !== 'convert') {
+      args.push(effectiveOutput)
+    } else if (effectiveOutput && subcommand === 'convert' && effectiveOutput !== state.input) {
+      args.push(effectiveOutput)
+    }
   }
 
-  if (state.output) {
-    args.push('-o', state.output)
-  }
-
+  // Common options
   if (state.overwrite || settings?.overwritePolicy) {
     args.push('--overwrite')
   }
@@ -90,16 +166,25 @@ export function buildCommandArgs(
 
   switch (subcommand) {
     case 'compress':
-      if (state.preset) {
+      if (state.preset === 'auto') {
+        args.push('--percent', '50')
+      } else if (state.preset === 'max_comp') {
+        args.push('--percent', '25')
+      } else if (state.preset === 'light_comp') {
+        args.push('--percent', '75')
+      } else if (state.preset && state.preset !== 'custom') {
         args.push('--preset', state.preset)
       } else if (state.targetMb !== undefined && state.targetMb > 0) {
-        args.push('--target-mb', state.targetMb.toString())
+        args.push('--target-size-mb', state.targetMb.toString())
       }
       if (state.scale) {
         args.push('--scale', state.scale)
       }
       if (state.audioBitrate) {
-        args.push('--audio-bitrate', state.audioBitrate)
+        const kbps = state.audioBitrate.replace(/[^0-9]/g, '')
+        if (kbps) {
+          args.push('--audio-bitrate', kbps)
+        }
       }
       break
 
@@ -135,7 +220,7 @@ export function buildCommandArgs(
         args.push('--format', state.audioFormat)
       }
       if (state.audioQuality) {
-        args.push('--quality', state.audioQuality)
+        args.push('--bitrate', state.audioQuality)
       }
       break
 
@@ -154,11 +239,6 @@ export function buildCommandArgs(
       break
 
     case 'merge':
-      if (state.mergeInputs && state.mergeInputs.length > 0) {
-        for (const input of state.mergeInputs) {
-          args.push('-i', input)
-        }
-      }
       if (state.reencode) {
         args.push('--reencode')
       }

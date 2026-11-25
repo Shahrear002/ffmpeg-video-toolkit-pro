@@ -1,6 +1,6 @@
 [package]
 name = "ffmpeg-video-toolkit-pro"
-version = "1.0.0"
+version = "0.0.5"
 description = "FFmpeg Video Toolkit Pro Desktop Application"
 authors = ["Video Toolkit Pro Team"]
 edition = "2021"

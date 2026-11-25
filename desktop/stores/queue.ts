@@ -168,6 +168,12 @@ export class QueueManager {
         },
         (errorChunk: string) => {
           nextJob.logs.push(`[STDERR] ${errorChunk}`)
+          const trimmed = errorChunk.trim()
+          if (trimmed && !nextJob.errorMessage) {
+            const lines = trimmed.split('\n').map((l) => l.trim()).filter(Boolean)
+            const errLine = lines.find((l) => l.toLowerCase().includes('error:') || l.startsWith('[ERROR') || l.startsWith('[FATAL'))
+            nextJob.lastStderr = errLine || lines[lines.length - 1]
+          }
         }
       )
 
@@ -186,7 +192,7 @@ export class QueueManager {
         nextJob.status = 'error'
         nextJob.finishedAt = Date.now()
         if (!nextJob.errorMessage) {
-          nextJob.errorMessage = `Process exited with code ${result.code}`
+          nextJob.errorMessage = nextJob.lastStderr || `Process exited with code ${result.code}`
         }
       }
     } catch (err: any) {

@@ -5,7 +5,7 @@ license: Commercial (Single-User)
 compatibility: Python 3.9+ with FFmpeg and FFprobe installed (libx264, aac, libmp3lame)
 metadata:
   author: Video Toolkit Pro Team
-  version: "1.0.0"
+  version: "0.0.5"
   tags:
     - video
     - ffmpeg
